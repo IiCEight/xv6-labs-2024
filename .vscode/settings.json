@@ -1,0 +1,19 @@
+{
+
+    // Use Makefile Tools to discover compiler flags/defines from the Makefile
+    "C_Cpp.default.configurationProvider": "ms-vscode.makefile-tools",
+    
+    // Fallbacks for IntelliSense (in case Makefile discovery isn't available)
+    "C_Cpp.default.compilerPath": "riscv64-unknown-elf-gcc", // change to full path or "gcc" if needed
+    "C_Cpp.default.cStandard": "c11",
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}",
+        "${workspaceFolder}/kernel",
+        "${workspaceFolder}/user"
+    ],
+    "files.associations": {
+        "param.h": "c",
+        "syscall.h": "c"
+    },
+    
+}

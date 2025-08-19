@@ -10,6 +10,9 @@ r_mhartid()
 }
 
 // Machine Status Register, mstatus
+// In RISC-V, Control and Status Registers (CSRs) are special-purpose registers inside the CPU.
+// mstatus is a special CSR that holds the machine’s status bits
+// (interrupt enable, privilege level, etc.)
 
 #define MSTATUS_MPP_MASK (3L << 11) // previous mode.
 #define MSTATUS_MPP_M (3L << 11)
@@ -34,6 +37,7 @@ w_mstatus(uint64 x)
 // machine exception program counter, holds the
 // instruction address to which a return from
 // exception will go.
+// It is also a CSR
 static inline void 
 w_mepc(uint64 x)
 {
