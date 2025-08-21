@@ -8,6 +8,8 @@ main(int argc, char *argv[])
 {
   // your code here.  you should write the secret to fd 2 using write
   // (e.g., write(2, secret, 8)
-
-  exit(1);
+  // This is a hard lab.
+    char *end = sbrk(PGSIZE * 17);
+    write(2, end + PGSIZE * 16 + 32, 8);
+    exit(1);
 }

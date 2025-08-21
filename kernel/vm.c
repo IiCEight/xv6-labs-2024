@@ -82,7 +82,8 @@ kvminithart()
 
 // Return the address of the PTE in page table pagetable
 // that corresponds to virtual address va.  If alloc!=0,
-// create any required page-table pages.
+// create any required page-table pages. So it will allocate
+// TWO page for required page-table after uvmcreate() immediately
 //
 // The risc-v Sv39 scheme has three levels of page-table
 // pages. A page-table page contains 512 64-bit PTEs.
@@ -92,6 +93,7 @@ kvminithart()
 //   21..29 -- 9 bits of level-1 index.
 //   12..20 -- 9 bits of level-0 index.
 //    0..11 -- 12 bits of byte offset within the page.
+//
 pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
@@ -334,6 +336,7 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 // physical memory.
 // returns 0 on success, -1 on failure.
 // frees any allocated pages on failure.
+// It will allcate the same physical memory as parent used in table page.
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
@@ -342,6 +345,8 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   uint flags;
   char *mem;
   int szinc;
+
+  int count = 0;
 
   for(i = 0; i < sz; i += szinc){
     szinc = PGSIZE;
@@ -354,12 +359,14 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
       goto err;
+    count++;
     memmove(mem, (char*)pa, PGSIZE);
     if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
       kfree(mem);
       goto err;
     }
   }
+//   printf("DEBUG: uvmcopy: copied %d pages\n", count);
   return 0;
 
  err:

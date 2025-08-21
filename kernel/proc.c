@@ -106,6 +106,7 @@ allocpid()
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
 // If there are no free procs, or a memory allocation fails, return 0.
+// This will allocate FOUR pages of physical memory for p->trapframe and pagetables
 static struct proc*
 allocproc(void)
 {
@@ -126,6 +127,7 @@ found:
   p->state = USED;
 
   // Allocate a trapframe page.
+  // Allocate one page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
     release(&p->lock);
@@ -133,6 +135,7 @@ found:
   }
 
   // An empty user page table.
+  // Allocate Three pages.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
     freeproc(p);
@@ -179,6 +182,7 @@ proc_pagetable(struct proc *p)
   pagetable_t pagetable;
 
   // An empty page table.
+  // Allocate one page for level-2 page table.
   pagetable = uvmcreate();
   if(pagetable == 0)
     return 0;
@@ -187,6 +191,7 @@ proc_pagetable(struct proc *p)
   // at the highest user virtual address.
   // only the supervisor uses it, on the way
   // to/from user space, so not PTE_U.
+  // Allocate two pages for remained level-1 and level-0 page tables.
   if(mappages(pagetable, TRAMPOLINE, PGSIZE,
               (uint64)trampoline, PTE_R | PTE_X) < 0){
     uvmfree(pagetable, 0);
@@ -282,6 +287,8 @@ fork(void)
   int i, pid;
   struct proc *np;
   struct proc *p = myproc();
+
+    // printf("\nDEBUG: process name: %s, p->sz: %ld\n", p->name, p->sz);
 
   // Allocate process.
   if((np = allocproc()) == 0){
