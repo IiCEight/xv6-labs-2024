@@ -50,7 +50,10 @@ exec(char *path, char **argv)
     goto bad;
 
   // Load program into memory.
+  // xv6 programs have two program section headers:
+  // one for instructions and one for data.
   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
+    
     if(readi(ip, 0, (uint64)&ph, off, sizeof(ph)) != sizeof(ph))
       goto bad;
     if(ph.type != ELF_PROG_LOAD)
@@ -75,9 +78,10 @@ exec(char *path, char **argv)
   p = myproc();
   uint64 oldsz = p->sz;
 
-  // Allocate some pages at the next page boundary.
+  // Allocate some pages (at least one page) at the next page boundary.
   // Make the first inaccessible as a stack guard.
   // Use the rest as the user stack.
+  // Stack only occupy one page size.
   sz = PGROUNDUP(sz);
   uint64 sz1;
   if((sz1 = uvmalloc(pagetable, sz, sz + (USERSTACK+1)*PGSIZE, PTE_W)) == 0)
@@ -85,6 +89,7 @@ exec(char *path, char **argv)
   sz = sz1;
   uvmclear(pagetable, sz-(USERSTACK+1)*PGSIZE);
   sp = sz;
+  // Use to check if stack overflow since too much push.
   stackbase = sp - USERSTACK*PGSIZE;
 
   // Push argument strings, prepare rest of stack in ustack.
@@ -102,6 +107,8 @@ exec(char *path, char **argv)
   ustack[argc] = 0;
 
   // push the array of argv[] pointers.
+  // From 0 to argc there are argc + 1 entries.
+  // And last one is zero entry for terminating.
   sp -= (argc+1) * sizeof(uint64);
   sp -= sp % 16;
   if(sp < stackbase)
