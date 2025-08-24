@@ -65,9 +65,9 @@ exec(char *path, char **argv)
     if(ph.vaddr % PGSIZE != 0)
       goto bad;
     uint64 sz1;
-    printf("\n\nCurrent process name: %s\n", p->name);
-    printf("size of section: %ld\n", ph.memsz);
-    printf("current sz: %ld\n", sz);
+    // printf("\n\nCurrent process name: %s\n", p->name);
+    // printf("size of section: %ld\n", ph.memsz);
+    // printf("current sz: %ld\n", sz);
     if((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz, flags2perm(ph.flags))) == 0)
       goto bad;
     sz = sz1;

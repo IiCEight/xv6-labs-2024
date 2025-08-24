@@ -204,6 +204,26 @@ proc_pagetable(struct proc *p)
     return 0;
   }
 
+  // Allocate one page for syscall
+  struct usyscall *usyscallpg = (struct usyscall *)kalloc();
+  if(usyscallpg == 0){
+    uvmfree(pagetable, 0);
+    return 0;
+  }
+  usyscallpg->pid = p->pid;
+
+  // map the syscall page which store current pid just below the trapframe page.
+  // Set PTE_U to let user process can access it.
+  if(mappages(pagetable, USYSCALL, PGSIZE,
+              (uint64)usyscallpg, PTE_U | PTE_R ) < 0){
+    // NOTE: set do_free = 1!!
+    uvmunmap(pagetable, USYSCALL, 1, 1);
+    uvmfree(pagetable, 0);
+    return 0;
+  }
+
+  printf("mapping succeeds! \n\n");/
+
   return pagetable;
 }
 
@@ -214,6 +234,8 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
+    // NOTE: set do_free = 1!!
+  uvmunmap(pagetable, USYSCALL, 1, 1);
   uvmfree(pagetable, sz);
 }
 

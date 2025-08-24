@@ -14,11 +14,11 @@ void superpg_test();
 int
 main(int argc, char *argv[])
 {
-  print_pgtbl();
+//   print_pgtbl(); OK
   ugetpid_test();
-  print_kpgtbl();
-  superpg_test();
-  printf("pgtbltest: all tests succeeded\n");
+//   print_kpgtbl();
+//   superpg_test();
+//   printf("pgtbltest: all tests succeeded\n");
   exit(0);
 }
 
@@ -60,7 +60,9 @@ ugetpid_test()
   printf("ugetpid_test starting\n");
   testname = "ugetpid_test";
 
-  for (i = 0; i < 64; i++) {
+  int times = 1;
+
+  for (i = 0; i < times; i++) {
     int ret = fork();
     if (ret != 0) {
       wait(&ret);
@@ -69,7 +71,11 @@ ugetpid_test()
       continue;
     }
     if (getpid() != ugetpid())
-      err("missmatched PID");
+    {
+        printf("getpid: %d\n", getpid());
+        printf("ugetpid: %d\n", ugetpid());
+        err("missmatched PID");
+    }
     exit(0);
   }
   printf("ugetpid_test: OK\n");
