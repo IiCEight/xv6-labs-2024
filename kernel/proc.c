@@ -222,7 +222,7 @@ proc_pagetable(struct proc *p)
     return 0;
   }
 
-  printf("mapping succeeds! \n\n");/
+//   printf("mapping succeeds! \n\n");
 
   return pagetable;
 }

@@ -487,10 +487,38 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 }
 
 
+void printpgtable(uint64 *pagetable, int depth)
+{
+    // there are 2^9 = 512 PTEs in a page table.
+    for(int i = 0; i < 512; i++){
+        pte_t pte = pagetable[i];
+        if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0)
+        {
+            // this PTE points to a lower-level page table.
+            uint64 child = PTE2PA(pte);
+            
+            // print prefix
+            for(int i = 1; i <= depth; i++)
+                printf("..");
+            printf("%x: pte %p pa %lx\n", i * PGSIZE, (uint64 *)pte, child);
+
+            printpgtable((pagetable_t)child, depth + 1);
+        } 
+        else if(pte & PTE_V)
+        {
+            // leaf
+            for(int i = 1; i <= depth; i++)
+                printf("..");
+            printf("%x: pte %p pa %lx\n", i * PGSIZE, (uint64 *)pte, PTE2PA(pte));
+        }
+    }
+}
+
 #ifdef LAB_PGTBL
 void
 vmprint(pagetable_t pagetable) {
-  // your code here
+    printf("page table %lx\n", (uint64)pagetable);
+    printpgtable(pagetable, 1);
 }
 #endif
 
