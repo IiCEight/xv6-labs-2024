@@ -15,6 +15,10 @@
 // the kernel uses physical memory thus:
 // 80000000 -- entry.S, then kernel text and data
 // end -- start of kernel page allocation area
+
+// Add a new area for superpage
+// I call this area KSMEMEND (end of kernel superpage memory)
+
 // PHYSTOP -- end RAM used by the kernel
 
 // qemu puts UART registers here in physical memory.
@@ -41,6 +45,10 @@
 // for use by the kernel and user pages
 // from physical address 0x80000000 to PHYSTOP.
 #define KERNBASE 0x80000000L
+
+// Use for end of end of kernel superpage memory
+#define KSMEMEND (KERNBASE + 32*512*PGSIZE)
+
 #define PHYSTOP (KERNBASE + 128*1024*1024)
 
 // map the trampoline page to the highest address,

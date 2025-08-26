@@ -117,6 +117,33 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
   return &pagetable[PX(0, va)];
 }
 
+pte_t * swalk(pagetable_t pagetable, uint64 va, int alloc)
+{
+  if(va >= MAXVA)
+    panic("walk");
+
+  for(int level = 2; level > 1; level--) 
+  {
+        pte_t *pte = &pagetable[PX(level, va)];
+        if(*pte & PTE_V) 
+        {
+            pagetable = (pagetable_t)PTE2PA(*pte);
+        #ifdef LAB_PGTBL
+            if(PTE_LEAF(*pte)) 
+                return pte;
+        #endif
+        } 
+        else 
+        {
+            if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
+                return 0;
+            memset(pagetable, 0, PGSIZE);
+            *pte = PA2PTE(pagetable) | PTE_V;
+        }
+  }
+  return &pagetable[PX(1, va)];
+}
+
 // Look up a virtual address, return the physical address,
 // or 0 if not mapped.
 // Can only be used to look up user pages.
@@ -187,6 +214,39 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   return 0;
 }
 
+int
+smappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
+{
+  uint64 a, last;
+  pte_t *pte;
+
+    printf("smappages va: %lx\n", va);
+
+  if((va % SUPERPGSIZE) != 0)
+    panic("smappages: va not aligned");
+
+  if((size % SUPERPGSIZE) != 0)
+    panic("smappages: size not aligned");
+
+  if(size == 0)
+    panic("smappages: size");
+
+  a = va;
+  last = va + size - SUPERPGSIZE;
+  for(;;){
+    if((pte = swalk(pagetable, a, 1)) == 0)
+      return -1;
+    if(*pte & PTE_V)
+      panic("mappages: remap");
+    *pte = PA2PTE(pa) | perm | PTE_V | PTE_SUPER;
+    if(a == last)
+      break;
+    a += SUPERPGSIZE;
+    pa += SUPERPGSIZE;
+  }
+  return 0;
+}
+
 // Remove npages of mappings starting from va. va must be
 // page-aligned. The mappings must exist.
 // Optionally free the physical memory.
@@ -211,9 +271,19 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
-      uint64 pa = PTE2PA(*pte);
-      kfree((void*)pa);
+        if ((* pte) & PTE_SUPER)
+        {
+            uint64 pa = PTE2PA(*pte);
+            ksfree((void*)pa);
+        }
+        else
+        {
+            uint64 pa = PTE2PA(*pte);
+            kfree((void*)pa);
+        }
     }
+    if ((* pte) & PTE_SUPER)
+        sz = SUPERPGSIZE;
     *pte = 0;
   }
 }
@@ -255,10 +325,59 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
 {
   char *mem;
   uint64 a;
-  int sz;
+  int sz, oldszroundup;
 
-  if(newsz < oldsz)
-    return oldsz;
+    if(newsz < oldsz)
+        return oldsz;
+
+
+    // To much duplicated code, To be simplified.
+    if(newsz - oldsz >= SUPERPGSIZE)
+    {
+        oldszroundup = SUPERPGROUNDUP(oldsz);
+
+        for(a = oldszroundup; a < newsz; a += sz){
+            sz = SUPERPGSIZE;
+            mem = ksalloc();
+            if(mem == 0)
+            {
+                uvmdealloc(pagetable, a, oldsz);
+                return 0;
+            }
+            #ifndef LAB_SYSCALL
+                memset(mem, 0, sz);
+            #endif
+            if(smappages(pagetable, a, sz, (uint64)mem, PTE_R|PTE_U|xperm) != 0)
+            {
+                ksfree(mem);
+                uvmdealloc(pagetable, a, oldsz);
+                return 0;
+            }
+        }
+
+        // We need to allocate the hole of user address space 
+        // from oldsz to oldszroundup.
+        oldsz = PGROUNDUP(oldsz);
+        for(a = oldsz; a < oldszroundup; a += sz){
+            sz = PGSIZE;
+            mem = kalloc();
+            if(mem == 0){
+            uvmdealloc(pagetable, a, oldsz);
+            return 0;
+            }
+        #ifndef LAB_SYSCALL
+            memset(mem, 0, sz);
+        #endif
+            if(mappages(pagetable, a, sz, (uint64)mem, PTE_R|PTE_U|xperm) != 0)
+            {
+                kfree(mem);
+                uvmdealloc(pagetable, a, oldsz);
+                return 0;
+            }
+        }
+
+        return newsz;
+    }
 
   oldsz = PGROUNDUP(oldsz);
   for(a = oldsz; a < newsz; a += sz){
@@ -345,13 +464,29 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
   for(i = 0; i < sz; i += szinc){
     szinc = PGSIZE;
-    szinc = PGSIZE;
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+    {
+        panic("uvmcopy: page not present");
+    }
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
+
+    if(flags & PTE_SUPER)
+    {
+        if((mem = ksalloc()) == 0)
+          goto err;
+        memmove(mem, (char*)pa, SUPERPGSIZE);
+        if (smappages(new, i, SUPERPGSIZE, (uint64)mem, flags) != 0)
+        {
+            ksfree(mem);
+            goto err;
+        }
+        szinc = SUPERPGSIZE;
+        continue;
+    }
+
     if((mem = kalloc()) == 0)
       goto err;
     memmove(mem, (char*)pa, PGSIZE);
@@ -487,29 +622,32 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 }
 
 
-void printpgtable(uint64 *pagetable, int depth)
+void printpgtable(uint64 *pagetable, int level, uint64 prefixsize)
 {
     // there are 2^9 = 512 PTEs in a page table.
     for(int i = 0; i < 512; i++){
         pte_t pte = pagetable[i];
+        int pagesz = (1LL <<(level * 9 + 12));
         if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0)
         {
             // this PTE points to a lower-level page table.
             uint64 child = PTE2PA(pte);
             
             // print prefix
-            for(int i = 1; i <= depth; i++)
+            for(int i = level; i <= 2; i++)
                 printf("..");
-            printf("%x: pte %p pa %lx\n", i * PGSIZE, (uint64 *)pte, child);
+            printf("va: %lx pte addr: %p  pte flag: %lx pa: %lx\n", 
+                i * pagesz + prefixsize, (uint64 *)pte, PTE_FLAGS(pte), child);
 
-            printpgtable((pagetable_t)child, depth + 1);
-        } 
+            printpgtable((pagetable_t)child, level - 1, i * pagesz + prefixsize);
+        }
         else if(pte & PTE_V)
         {
             // leaf
-            for(int i = 1; i <= depth; i++)
+            for(int i = level; i <= 2; i++)
                 printf("..");
-            printf("%x: pte %p pa %lx\n", i * PGSIZE, (uint64 *)pte, PTE2PA(pte));
+            printf("va: %lx pte addr: %p pte flag: %lx pa: %lx\n", 
+                i * pagesz + prefixsize, (uint64 *)pte, PTE_FLAGS(pte), PTE2PA(pte));
         }
     }
 }
@@ -518,7 +656,7 @@ void printpgtable(uint64 *pagetable, int depth)
 void
 vmprint(pagetable_t pagetable) {
     printf("page table %lx\n", (uint64)pagetable);
-    printpgtable(pagetable, 1);
+    printpgtable(pagetable, 2, 0);
 }
 #endif
 

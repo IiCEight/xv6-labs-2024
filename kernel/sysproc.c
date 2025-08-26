@@ -42,7 +42,14 @@ sys_sbrk(void)
   int n;
 
   argint(0, &n);
+  // Save the current program break
+  // myproc()->sz is also used for heap break.
+  // Since text, data, stack and heap are all memory used
+  // and heap is living in highest address and user address
+  // space start at address 0x0.
+  // See user address space figure 3.4 for more.
   addr = myproc()->sz;
+  
   if(growproc(n) < 0)
     return -1;
   return addr;

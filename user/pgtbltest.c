@@ -14,10 +14,10 @@ void superpg_test();
 int
 main(int argc, char *argv[])
 {
-//   print_pgtbl(); OK
-//   ugetpid_test(); OK
-  print_kpgtbl();
-//   superpg_test();
+//   print_pgtbl(); //OK
+//   ugetpid_test(); //OK
+//   print_kpgtbl(); //OK
+  superpg_test();
 //   printf("pgtbltest: all tests succeeded\n");
   exit(0);
 }
@@ -132,6 +132,10 @@ superpg_test()
   
   uint64 s = SUPERPGROUNDUP((uint64) end);
   supercheck(s);
+  printf("supercheck without fork passed\n\n");
+  print_kpgtbl();
+
+
   if((pid = fork()) < 0) {
     err("fork");
   } else if(pid == 0) {
