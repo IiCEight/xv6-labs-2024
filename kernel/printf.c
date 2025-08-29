@@ -165,6 +165,7 @@ panic(char *s)
   pr.locking = 0;
   printf("panic: ");
   printf("%s\n", s);
+  backtrace();
   panicked = 1; // freeze uart output from other CPUs
   for(;;)
     ;
@@ -175,4 +176,24 @@ printfinit(void)
 {
   initlock(&pr.lock, "pr");
   pr.locking = 1;
+}
+
+
+void backtrace(void)
+{
+    printf("Backtrace:\n");
+    uint64 topStackFrameAddress = r_fp();
+
+    uint64 stackUpperBoundary = PGROUNDDOWN(topStackFrameAddress);
+    uint64 stackLowerBoundary = PGROUNDUP(topStackFrameAddress);
+
+    uint64 currentStackFrameAddress = topStackFrameAddress;
+
+    while(currentStackFrameAddress < stackLowerBoundary && currentStackFrameAddress >= stackUpperBoundary)
+    {
+        // print return address
+        printf("  %lx\n", *(uint64 *)(currentStackFrameAddress - 8)); 
+        // follow frame pointer chain
+        currentStackFrameAddress = *(uint64 *)(currentStackFrameAddress - 16); 
+    }
 }
