@@ -29,6 +29,19 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
+void store()
+{
+    struct proc *p = myproc();
+
+    // Check if sigtrapframe is allocated before using it
+    if(p->sigtrapframe == 0) {
+        panic("store: sigtrapframe not allocated");
+    }
+
+    // Copy trapframe to sigtrapframe (both are kernel virtual addresses)
+    memmove((void*)p->sigtrapframe, (void*)p->trapframe, sizeof(struct trapframe));
+}
+
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
@@ -64,6 +77,7 @@ usertrap(void)
     // so enable only now that we're done with those registers.
     intr_on();
 
+
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
@@ -73,12 +87,35 @@ usertrap(void)
     setkilled(p);
   }
 
-  if(killed(p))
-    exit(-1);
+    if(killed(p))
+        exit(-1);
 
-  // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
-    yield();
+    // give up the CPU if this is a timer interrupt.
+    if(which_dev == 2)
+        yield();
+
+    //
+    // implementation of sigalarm system call
+    //
+    if (which_dev == 2) {
+        if (p->sigalarminterval > 0) {
+            p->passedticks++;
+            if (p->passedticks >= p->sigalarminterval && p->needReturn == 0) {
+                p->passedticks = 0;
+                // invoke the signal handler
+                // However we can run it in kernel,
+                // We need to modify ret address to
+                // point to handler code 
+                // and run it in user space.
+                // printf("handler begin......\n");
+                // store all context into sigtrapframe.
+                store();
+                // printf("store complete!!!\n");
+                p->trapframe->epc = (uint64)p->sigalarmhandler;
+                p->needReturn = 1;
+            }
+        }
+    }
 
   usertrapret();
 }
@@ -163,6 +200,9 @@ kerneltrap()
 void
 clockintr()
 {
+  // Only CPU 0 is the one responsible for maintaining global time
+  // Otherwise, every core would increment ticks, and time would advance too fast.
+  // So different CPU can be synchronous with this global time.
   if(cpuid() == 0){
     acquire(&tickslock);
     ticks++;

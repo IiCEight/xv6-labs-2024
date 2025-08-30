@@ -179,6 +179,7 @@ printfinit(void)
 }
 
 
+// NOTE: stack grow downward.
 void backtrace(void)
 {
     printf("Backtrace:\n");
@@ -189,7 +190,8 @@ void backtrace(void)
 
     uint64 currentStackFrameAddress = topStackFrameAddress;
 
-    while(currentStackFrameAddress < stackLowerBoundary && currentStackFrameAddress >= stackUpperBoundary)
+    while(currentStackFrameAddress < stackLowerBoundary 
+        && currentStackFrameAddress >= stackUpperBoundary)
     {
         // print return address
         printf("  %lx\n", *(uint64 *)(currentStackFrameAddress - 8)); 

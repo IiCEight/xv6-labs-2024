@@ -104,4 +104,13 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  int sigalarminterval;        // used for sigalarm system call
+  void (*sigalarmhandler)(void);   // used for sigalarm system call
+  int passedticks;             // How many ticks have passed since last call handler
+  int needReturn;              // Whether handler need to return and resume status.
+
+
+  // we allocate a page to it and place its address under
+  // trapframe.
+  struct trapframe *sigtrapframe;   // Used for store env for sigreturn.
 };

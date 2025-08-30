@@ -56,11 +56,14 @@ timerinit()
   w_mie(r_mie() | MIE_STIE);
   
   // enable the sstc extension (i.e. stimecmp).
+  // With Sstc, the supervisor can directly write to the stimecmp
+  // register instead of going through machine mode and CLINT.
   w_menvcfg(r_menvcfg() | (1L << 63)); 
   
   // allow supervisor to use stimecmp and time.
   w_mcounteren(r_mcounteren() | 2);
   
   // ask for the very first timer interrupt.
+  // when time >= timecmp a interrupt occurs.
   w_stimecmp(r_time() + 1000000);
 }
