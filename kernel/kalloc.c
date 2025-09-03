@@ -77,7 +77,10 @@ kfree(void *pa)
     panic("kfree");
 
   // Fill with junk to catch dangling refs.
-  memset(pa, 0, PGSIZE);
+  // Shit this bug take me about 2hours.
+  // I forget to handle this and case
+  // clear all pages whoever they are.
+ /*  memset(pa, 0, PGSIZE); */
 
   r = (struct run*)pa;
   int index = MEMINDEX(r);
@@ -91,6 +94,7 @@ kfree(void *pa)
     {
         r->next = kmem.freelist;
         kmem.freelist = r;
+        memset(pa, 0, PGSIZE);
     }
     // printf("kfree address %lx, index %d, refcount %d\n", (uint64)r, index, kmem.refcount[index]);
   }
