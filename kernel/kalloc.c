@@ -37,12 +37,20 @@ kinit()
     for (int i = 0; i < 16; i++)
     {
         // we need set kmem.refcount to 0 for kalloc();
-        acquire(&kmem.lock);
         kmem.refcount = 0;
-        release(&kmem.lock);
         kmem.refcount = (uint16 *)kalloc();
         // initialize it to 0.
         memset(kmem.refcount, 0, PGSIZE);
+    }
+    for (int i = 0; i < 16 * PGSIZE / 2; i++)
+    {
+        if(kmem.refcount[i] != 0)
+            panic("refcount not zero");
+        if((uint64)(kmem.refcount + i) >= PHYSTOP)
+        {
+            printf("kmem.refcount + i: %lx\n", (uint64)(kmem.refcount + i));
+            panic("refcount out of bounds");
+        }
     }
     printf("init kernel memory done.....\n");
 }
@@ -72,17 +80,19 @@ kfree(void *pa)
   memset(pa, 0, PGSIZE);
 
   r = (struct run*)pa;
+  int index = MEMINDEX(r);
 
   acquire(&kmem.lock);
 
-  if((uint64)kmem.refcount != 0)
+  if(kmem.refcount != 0)
   {
-    kmem.refcount[MEMINDEX(r)]--;
-    if(kmem.refcount[MEMINDEX(r)] == 0)
+    kmem.refcount[index]--;
+    if(kmem.refcount[index] == 0)
     {
         r->next = kmem.freelist;
         kmem.freelist = r;
     }
+    // printf("kfree address %lx, index %d, refcount %d\n", (uint64)r, index, kmem.refcount[index]);
   }
   else
   {
@@ -103,25 +113,34 @@ kalloc(void)
 
   acquire(&kmem.lock);
   r = kmem.freelist;
+  int index = MEMINDEX(r);
   if(r)
   {
     kmem.freelist = r->next;
     // update reference count
-    if((uint64)kmem.refcount != 0)
-        kmem.refcount[MEMINDEX(r)]++;
+    if(kmem.refcount != 0)
+    {
+        if(kmem.refcount[index] != 0)
+            panic("kalloc: double kalloc");
+        kmem.refcount[index]++;
+    }
   }
   release(&kmem.lock);
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
+
+//   printf("kalloc address %lx, index %d, refcount %d\n", (uint64)r, index, kmem.refcount[index]);
+
   return (void*)r;
 }
 
-void kupdatememrefcount(uint64 pa, uint16 variation)
+void kincresememrefcount(uint64 pa)
 {
     acquire(&kmem.lock);
-    if((uint64)kmem.refcount == 0)
-        panic("kupdatememrefcount: refcount not initialized");
-    kmem.refcount[MEMINDEX(pa)] += variation;
+    if(kmem.refcount == 0)
+        panic("kincresememrefcount: refcount not initialized");
+    kmem.refcount[MEMINDEX(pa)] ++;
+//   printf("update address %lx, index %ld, refcount %d\n", (uint64)pa, MEMINDEX(pa), kmem.refcount[MEMINDEX(pa)]);
     release(&kmem.lock);
 }

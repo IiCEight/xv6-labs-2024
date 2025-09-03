@@ -163,53 +163,9 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
       return -1;
 
     // alloc remap!!!
-    // if(*pte & PTE_V)
-    //   panic("mappages: remap");
+    if(*pte & PTE_V)
+      panic("mappages: remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
-    if(a == last)
-      break;
-    a += PGSIZE;
-    pa += PGSIZE;
-  }
-  return 0;
-}
-
-//
-int mappagescopy(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa)
-{
-    uint64 a, last;
-  pte_t *pte;
-
-  if((va % PGSIZE) != 0)
-    panic("mappages: va not aligned");
-
-  if((size % PGSIZE) != 0)
-    panic("mappages: size not aligned");
-
-  if(size == 0)
-    panic("mappages: size");
-  
-  a = va;
-  last = va + size - PGSIZE;
-  for(;;){
-    if((pte = walk(pagetable, a, 1)) == 0)
-      return -1;
-    // if(*pte & PTE_V)
-    //   panic("mappages: remap");
-    
-    // Get the old flags and set new physical address
-    uint64 flags = PTE_FLAGS(*pte);
-    *pte = PA2PTE(pa) | flags;
-    
-    if((*pte) & PTE_SW)
-    {
-        // clear PTE_SW and mark PTE_W
-        *pte &= (~PTE_SW);
-        *pte |= PTE_W;
-    }
-    if((*pte) & PTE_SW)
-        panic("mappages: PTE_SW not cleared");
-
     if(a == last)
       break;
     a += PGSIZE;
@@ -234,10 +190,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     if((pte = walk(pagetable, a, 0)) == 0)
       panic("uvmunmap: walk");
     if((*pte & PTE_V) == 0)
-    {
-        printf("PTE: %lx, flag : %lx\n", *pte, PTE_FLAGS(*pte));
         panic("uvmunmap: not mapped");
-    }
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -380,7 +333,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     // by using a bit (PTE_SW).
     // if ((*pte) & PTE_W)
     // {
-        *pte &= ~PTE_W;
+        *pte &= (~PTE_W);
         *pte |= PTE_SW;
         if((*pte) & PTE_W)
             panic("uvmcopy: PTE_W not cleared!");
@@ -392,12 +345,12 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     //   goto err;
     // memmove(mem, (char*)pa, PGSIZE);
 
-    kupdatememrefcount(pa, 1);
-
+    
     if(mappages(new, i, PGSIZE, pa, flags) != 0){
-    //   kfree(mem);
-      goto err;
+        //   kfree(mem);
+        goto err;
     }
+    kincresememrefcount(pa);
   }
   return 0;
 
@@ -432,10 +385,25 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     va0 = PGROUNDDOWN(dstva);
     if(va0 >= MAXVA)
       return -1;
+      
+    // Check if this is a COW page that needs to be allocated
+    if(pagefaultcheck(pagetable, va0))
+    {
+        if(cowallocpage(pagetable, va0) < 0)
+            return -1;
+    }
+    
     pte = walk(pagetable, va0, 0);
-    if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0 ||
-       (*pte & PTE_W) == 0 || (*pte & PTE_SW))
+    if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0)
       return -1;
+      
+    // After COW allocation, the page should be writable
+    if((*pte & PTE_W) == 0)
+    {
+        printf("copyout: page not writable\n");
+        return -1;
+    }
+      
     pa0 = PTE2PA(*pte);
     n = PGSIZE - (dstva - va0);
     if(n > len)

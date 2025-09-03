@@ -63,7 +63,7 @@ void            ramdiskrw(struct buf*);
 void*           kalloc(void);
 void            kfree(void *);
 void            kinit(void);
-void            kupdatememrefcount(uint64 pa, uint16 variation);
+void            kincresememrefcount(uint64 pa);
 
 
 // log.c
@@ -162,7 +162,6 @@ void            kvminit(void);
 void            kvminithart(void);
 void            kvmmap(pagetable_t, uint64, uint64, uint64, int);
 int             mappages(pagetable_t, uint64, uint64, uint64, int);
-int mappagescopy(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa);
 pagetable_t     uvmcreate(void);
 void            uvmfirst(pagetable_t, uchar *, uint);
 uint64          uvmalloc(pagetable_t, uint64, uint64, int);
@@ -176,6 +175,8 @@ uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
+int             pagefaultcheck(pagetable_t pgtbl, uint64 va);
+int             cowallocpage(pagetable_t pgtbl, uint64 va);
 
 // plic.c
 void            plicinit(void);
