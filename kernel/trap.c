@@ -70,9 +70,9 @@ usertrap(void)
   } 
     else if (r_scause() == 15) // page fault.
     {
-        printf("page fault begin....\n");
+        // printf("page fault begin....\n");
         uint64 va = r_stval(); // the faulting address.
-        printf("page fault va = 0x%lx\n", va);
+        // printf("page fault va = 0x%lx\n", va);
         if(pagefaultcheck(p->pagetable, va) == 0)
         {
             printf("pagefaultcheck: failed\n");
@@ -114,7 +114,7 @@ usertrap(void)
             //     }
             // }
         }
-        printf("page fault end....\n");
+        // printf("page fault end....\n");
     }
     else if (r_scause() == 13) // load page fault
     {

@@ -21,24 +21,24 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
-  uint16 *refcount;
+  short *refcount;
 } kmem;
 
 
 void
 kinit()
 {
-    printf("freerange begin\n");
+    // printf("freerange begin\n");
   initlock(&kmem.lock, "kmem");
   freerange(end, (void*)PHYSTOP);
-    printf("init refcount begin\n");
+    // printf("init refcount begin\n");
   // Since it is head insertions.
   // And we need continuous physical memory.
     for (int i = 0; i < 16; i++)
     {
         // we need set kmem.refcount to 0 for kalloc();
         kmem.refcount = 0;
-        kmem.refcount = (uint16 *)kalloc();
+        kmem.refcount = (short *)kalloc();
         // initialize it to 0.
         memset(kmem.refcount, 0, PGSIZE);
     }
@@ -52,7 +52,7 @@ kinit()
             panic("refcount out of bounds");
         }
     }
-    printf("init kernel memory done.....\n");
+    // printf("init kernel memory done.....\n");
 }
 
 void
@@ -92,14 +92,19 @@ kfree(void *pa)
     kmem.refcount[index]--;
     if(kmem.refcount[index] == 0)
     {
+        // NOTE!!!!!!!!
+        // Order is important here.
+        // clear must before r->next = kmem.freelist;
+        // Or r->next will be 0;
+        memset(pa, 0, PGSIZE);
         r->next = kmem.freelist;
         kmem.freelist = r;
-        memset(pa, 0, PGSIZE);
     }
     // printf("kfree address %lx, index %d, refcount %d\n", (uint64)r, index, kmem.refcount[index]);
   }
   else
   {
+    memset(pa, 0, PGSIZE);
     r->next = kmem.freelist;
     kmem.freelist = r;
   }
