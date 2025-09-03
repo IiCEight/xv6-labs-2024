@@ -22,6 +22,7 @@ int flags2perm(int flags)
 int
 exec(char *path, char **argv)
 {
+    printf("begin exec\n");
   char *s, *last;
   int i, off;
   uint64 argc, sz = 0, sp, ustack[MAXARG], stackbase;
@@ -119,7 +120,7 @@ exec(char *path, char **argv)
     if(*s == '/')
       last = s+1;
   safestrcpy(p->name, last, sizeof(p->name));
-    
+  printf("exec %s\n", p->name);
   // Commit to the user image.
   oldpagetable = p->pagetable;
   p->pagetable = pagetable;
@@ -128,11 +129,17 @@ exec(char *path, char **argv)
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
 
+    printf("end exec\n");
+
+
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
  bad:
+ printf("exec bad!!!!!!!!!!\n");
   if(pagetable)
-    proc_freepagetable(pagetable, sz);
+  {
+      proc_freepagetable(pagetable, sz);
+  }
   if(ip){
     iunlockput(ip);
     end_op();

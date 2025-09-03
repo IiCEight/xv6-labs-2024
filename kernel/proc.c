@@ -122,6 +122,7 @@ allocproc(void)
   return 0;
 
 found:
+  printf("allocate proc\n");
   p->pid = allocpid();
   p->state = USED;
 
@@ -145,6 +146,7 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+  printf("allocate proc\n");
 
   return p;
 }
@@ -210,6 +212,7 @@ proc_pagetable(struct proc *p)
 void
 proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
+
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
   uvmfree(pagetable, sz);
@@ -279,6 +282,7 @@ growproc(int n)
 int
 fork(void)
 {
+    printf("begin fork\n");
   int i, pid;
   struct proc *np;
   struct proc *p = myproc();
@@ -294,6 +298,7 @@ fork(void)
     release(&np->lock);
     return -1;
   }
+//   printf("fork uvmcopy finish\n");
   np->sz = p->sz;
 
   // copy saved user registers.
@@ -322,6 +327,7 @@ fork(void)
   np->state = RUNNABLE;
   release(&np->lock);
 
+  printf("end fork\n");
   return pid;
 }
 
@@ -415,8 +421,11 @@ wait(uint64 addr)
             return -1;
           }
           freeproc(pp);
+        //   printf("wait free proc success!\n");
           release(&pp->lock);
+        //   printf("release pp success!\n");
           release(&wait_lock);
+        //   printf("release wait success!\n");
           return pid;
         }
         release(&pp->lock);

@@ -67,14 +67,108 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else {
+  } 
+    else if (r_scause() == 15) // page fault.
+    {
+        printf("page fault begin....\n");
+        uint64 va = r_stval(); // the faulting address.
+        printf("page fault va = 0x%lx\n", va);
+        if(va >= MAXVA)
+        {
+            printf("page fault: invalid address va >= MAXVA\n");
+            setkilled(p);
+        }
+        else 
+        {
+            pte_t *pte = walk(p->pagetable, va, 0);
+            if(pte == 0) 
+            {
+                printf("page fault: pte is null - page not mapped at all\n");
+                printf("va=0x%lx is outside allocated memory (sz=0x%lx)\n", va, p->sz);
+                setkilled(p);
+            }
+            else if(((*pte) & PTE_V) == 0)
+            {
+                printf("page fault: PTE exists but PTE_V=0 - page not valid\n");
+                printf("pte = 0x%lx\n", *pte);
+                setkilled(p);
+            }
+            else if(((*pte) & PTE_SW) == 0) 
+            {
+                printf("page fault: not a COW page (PTE_SW=0)\n");
+                printf("pte = 0x%lx, flags: V=%d R=%d W=%d X=%d U=%d\n", 
+                       *pte,
+                       (*pte & PTE_V) ? 1 : 0,
+                       (*pte & PTE_R) ? 1 : 0,
+                       (*pte & PTE_W) ? 1 : 0,
+                       (*pte & PTE_X) ? 1 : 0,
+                       (*pte & PTE_U) ? 1 : 0);
+                setkilled(p);
+            }
+            else 
+            {
+                uint64 rounddownpa = PTE2PA(*pte);
+                char *mem = kalloc();
+                if(mem == 0)
+                {
+                    printf("usertrap: out of memory\n");
+                    setkilled(p);
+                } 
+                else 
+                {
+                    // NOTE: we need page align.
+                    uint64 a = PGROUNDDOWN(va);
+                    
+                    // Copy from the original page using walkaddr to get proper kernel virtual address
+                    uint64 ka = walkaddr(p->pagetable, a);
+                    if(ka != rounddownpa)
+                        panic("Wrong~~~~~~~~~~~~~~~~~~~~~~~~\n");
+                    if(ka == 0) {
+                        printf("usertrap: walkaddr failed\n");
+                        kfree(mem);
+                        setkilled(p);
+                    } else {
+                        memmove(mem, (char*)ka, PGSIZE);
+                        if(mappagescopy(p->pagetable, a, PGSIZE, (uint64)mem) != 0)
+                        {
+                            printf("usertrap: mappages failed\n");
+                            kfree(mem);
+                            setkilled(p);
+                        }
+                        else 
+                        {
+                            // succeed!!
+                            // refresh TLB we don't need since we are in
+                            // kernel and only can refresh kernel TLB
+                            // When return to user mode, os will change
+                            // TLB and refresh it.
+                            // sfence_vma();
+
+                            // decrease original physical memory reference count
+                            kfree((void *)rounddownpa);
+                        }
+                    }
+                }
+            }
+        }
+        printf("page fault end....\n");
+    }
+    else if (r_scause() == 13) // load page fault
+    {
+        printf("load page fault!!!");
+    }
+  else {
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
+    printf("name: %s\n", p->name);
     setkilled(p);
   }
 
   if(killed(p))
+  {
+    printf("I am killed!!!!!!!!!!!!!!!\n");
     exit(-1);
+  }
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
@@ -89,6 +183,7 @@ usertrap(void)
 void
 usertrapret(void)
 {
+    // printf("Return to user mode\n");
   struct proc *p = myproc();
 
   // we're about to switch the destination of traps from

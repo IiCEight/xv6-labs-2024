@@ -58,6 +58,7 @@ void runcmd(struct cmd*) __attribute__((noreturn));
 void
 runcmd(struct cmd *cmd)
 {
+    printf("begin run cmd\n");
   int p[2];
   struct backcmd *bcmd;
   struct execcmd *ecmd;
@@ -94,6 +95,7 @@ runcmd(struct cmd *cmd)
     lcmd = (struct listcmd*)cmd;
     if(fork1() == 0)
       runcmd(lcmd->left);
+    printf("begin wait\n");
     wait(0);
     runcmd(lcmd->right);
     break;
@@ -165,9 +167,14 @@ main(void)
         fprintf(2, "cannot cd %s\n", buf+3);
       continue;
     }
-    if(fork1() == 0)
+    printf("About to fork for command\n");
+    if(fork1() == 0) {
+      printf("Child: about to run command\n");
       runcmd(parsecmd(buf));
+    }
+    printf("Parent: begin wait\n");
     wait(0);
+    printf("Parent: Child exec done.....\n");
   }
   exit(0);
 }

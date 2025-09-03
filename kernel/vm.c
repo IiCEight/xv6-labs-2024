@@ -14,6 +14,7 @@ pagetable_t kernel_pagetable;
 extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
+extern struct kernelmem kmem;
 
 // Make a direct-map page table for the kernel.
 pagetable_t
@@ -160,9 +161,55 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   for(;;){
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;
-    if(*pte & PTE_V)
-      panic("mappages: remap");
+
+    // alloc remap!!!
+    // if(*pte & PTE_V)
+    //   panic("mappages: remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
+    if(a == last)
+      break;
+    a += PGSIZE;
+    pa += PGSIZE;
+  }
+  return 0;
+}
+
+//
+int mappagescopy(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa)
+{
+    uint64 a, last;
+  pte_t *pte;
+
+  if((va % PGSIZE) != 0)
+    panic("mappages: va not aligned");
+
+  if((size % PGSIZE) != 0)
+    panic("mappages: size not aligned");
+
+  if(size == 0)
+    panic("mappages: size");
+  
+  a = va;
+  last = va + size - PGSIZE;
+  for(;;){
+    if((pte = walk(pagetable, a, 1)) == 0)
+      return -1;
+    // if(*pte & PTE_V)
+    //   panic("mappages: remap");
+    
+    // Get the old flags and set new physical address
+    uint64 flags = PTE_FLAGS(*pte);
+    *pte = PA2PTE(pa) | flags;
+    
+    if((*pte) & PTE_SW)
+    {
+        // clear PTE_SW and mark PTE_W
+        *pte &= (~PTE_SW);
+        *pte |= PTE_W;
+    }
+    if((*pte) & PTE_SW)
+        panic("mappages: PTE_SW not cleared");
+
     if(a == last)
       break;
     a += PGSIZE;
@@ -187,7 +234,10 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     if((pte = walk(pagetable, a, 0)) == 0)
       panic("uvmunmap: walk");
     if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
+    {
+        printf("PTE: %lx, flag : %lx\n", *pte, PTE_FLAGS(*pte));
+        panic("uvmunmap: not mapped");
+    }
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -299,7 +349,9 @@ void
 uvmfree(pagetable_t pagetable, uint64 sz)
 {
   if(sz > 0)
+  {
     uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 1);
+  }
   freewalk(pagetable);
 }
 
@@ -315,7 +367,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+//   char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -323,12 +375,27 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
+    // Clear PTE_W for both parent and child
+    // NOTE: We need to identify the page as writable
+    // by using a bit (PTE_SW).
+    // if ((*pte) & PTE_W)
+    // {
+        *pte &= ~PTE_W;
+        *pte |= PTE_SW;
+        if((*pte) & PTE_W)
+            panic("uvmcopy: PTE_W not cleared!");
+    // }
+
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    // We share the physical memory.
+    // if((mem = kalloc()) == 0)
+    //   goto err;
+    // memmove(mem, (char*)pa, PGSIZE);
+
+    kupdatememrefcount(pa, 1);
+
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
+    //   kfree(mem);
       goto err;
     }
   }
@@ -367,7 +434,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
       return -1;
     pte = walk(pagetable, va0, 0);
     if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0 ||
-       (*pte & PTE_W) == 0)
+       (*pte & PTE_W) == 0 || (*pte & PTE_SW))
       return -1;
     pa0 = PTE2PA(*pte);
     n = PGSIZE - (dstva - va0);
