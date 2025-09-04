@@ -18,6 +18,7 @@ struct run {
   struct run *next;
 };
 
+
 struct {
   struct spinlock lock;
   struct run *freelist;
@@ -25,11 +26,13 @@ struct {
 } kmem;
 
 
+
 void
 kinit()
 {
     // printf("freerange begin\n");
   initlock(&kmem.lock, "kmem");
+
   freerange(end, (void*)PHYSTOP);
     // printf("init refcount begin\n");
   // Since it is head insertions.
@@ -76,9 +79,10 @@ kfree(void *pa)
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
+    /********** bug 1: here *************/
   // Fill with junk to catch dangling refs.
-  // Shit this bug take me about 2hours.
-  // I forget to handle this and case
+  // Shit this bug take me about 2 hours.
+  // I forget to handle this and cause
   // clear all pages whoever they are.
  /*  memset(pa, 0, PGSIZE); */
 
@@ -89,9 +93,14 @@ kfree(void *pa)
 
   if(kmem.refcount != 0)
   {
+    /********** bug 3: here *************/
+    // NOTE: If refcount is unsigned and = 0.
+    // Then kmem.refcount[index]--. It will
+    // underflow to 65535.
     kmem.refcount[index]--;
     if(kmem.refcount[index] == 0)
     {
+         /********** bug 2: here *************/
         // NOTE!!!!!!!!
         // Order is important here.
         // clear must before r->next = kmem.freelist;
@@ -110,7 +119,6 @@ kfree(void *pa)
   }
   release(&kmem.lock);
 }
-
 
 // Allocate one 4096-byte page of physical memory.
 // Returns a pointer that the kernel can use.

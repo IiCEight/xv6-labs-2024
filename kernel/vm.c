@@ -328,16 +328,17 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
+    /*************** bug 4: Here ******************/
     // Clear PTE_W for both parent and child
     // NOTE: We need to identify the page as writable
     // by using a bit (PTE_SW).
-    // if ((*pte) & PTE_W)
-    // {
+    if ((*pte) & PTE_W)
+    {
         *pte &= (~PTE_W);
         *pte |= PTE_SW;
         if((*pte) & PTE_W)
             panic("uvmcopy: PTE_W not cleared!");
-    // }
+    }
 
     flags = PTE_FLAGS(*pte);
     // We share the physical memory.
@@ -386,19 +387,32 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     if(va0 >= MAXVA)
       return -1;
       
-    // Check if this is a COW page that needs to be allocated
-    if(pagefaultcheck(pagetable, va0))
-    {
-        if(cowallocpage(pagetable, va0) < 0)
-            return -1;
-    }
-    
     pte = walk(pagetable, va0, 0);
-    if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0)
-      return -1;
+    if(pte == 0 || ((*pte) & PTE_V) == 0 || ((*pte) & PTE_U) == 0)
+    {
+        printf("copyout: invalid page\n");
+        return -1;
+    }
       
-    // After COW allocation, the page should be writable
-    if((*pte & PTE_W) == 0)
+    if((*pte) & PTE_SW)
+    {
+        // COW page fault
+        if(cowallocpage(pagetable, va0) < 0)
+        {
+            printf("copyout: cowallocpage failed\n");
+            return -1;
+        }
+        // re-fetch the pte after COW allocation
+        pte = walk(pagetable, va0, 0);
+        if(pte == 0 || ((*pte) & PTE_V) == 0 || ((*pte) & PTE_U) == 0)
+        {
+            printf("copyout:cowallocpage and walk invaild pte\n");
+            return -1;
+        }
+    }
+
+    // Page is not writable
+    if(((*pte) & PTE_W) == 0)
     {
         printf("copyout: page not writable\n");
         return -1;

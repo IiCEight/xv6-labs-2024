@@ -122,7 +122,7 @@ allocproc(void)
   return 0;
 
 found:
-  printf("allocate proc\n");
+//   printf("allocate proc\n");
   p->pid = allocpid();
   p->state = USED;
 
@@ -146,7 +146,7 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
-  printf("allocate proc\n");
+//   printf("allocate proc\n");
 
   return p;
 }
@@ -282,7 +282,7 @@ growproc(int n)
 int
 fork(void)
 {
-    printf("begin fork\n");
+    // printf("begin fork\n");
   int i, pid;
   struct proc *np;
   struct proc *p = myproc();
@@ -327,7 +327,7 @@ fork(void)
   np->state = RUNNABLE;
   release(&np->lock);
 
-  printf("end fork\n");
+//   printf("end fork\n");
   return pid;
 }
 
@@ -399,7 +399,7 @@ wait(uint64 addr)
   struct proc *pp;
   int havekids, pid;
   struct proc *p = myproc();
-
+    // printf("addr = %lx\n", addr);
   acquire(&wait_lock);
 
   for(;;){
@@ -428,6 +428,8 @@ wait(uint64 addr)
         //   printf("release wait success!\n");
           return pid;
         }
+        // printf("There is a child process, but it is not ZOMBIE, its state is %d, pid: %d\n"
+                // , pp->state, pp->pid);
         release(&pp->lock);
       }
     }
@@ -437,9 +439,10 @@ wait(uint64 addr)
       release(&wait_lock);
       return -1;
     }
-    
+    // printf("Waiting for a child to exit...\n");
     // Wait for a child to exit.
     sleep(p, &wait_lock);  //DOC: wait-sleep
+    // printf("Wake up...\n");
   }
 }
 

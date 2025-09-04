@@ -68,7 +68,9 @@ usertrap(void)
   } else if((which_dev = devintr()) != 0){
     // ok
   } 
-    else if (r_scause() == 15) // page fault.
+    /*************** bug 5: Here ******************/
+  // BUG FOUND: Load page fault is need handle too.
+    else if (r_scause() == 15 || r_scause() == 13) // page fault and load page fault
     {
         // printf("page fault begin....\n");
         uint64 va = r_stval(); // the faulting address.
@@ -116,10 +118,6 @@ usertrap(void)
         }
         // printf("page fault end....\n");
     }
-    else if (r_scause() == 13) // load page fault
-    {
-        printf("load page fault!!!");
-    }
   else {
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
@@ -129,7 +127,7 @@ usertrap(void)
 
   if(killed(p))
   {
-    printf("I am killed!!!!!!!!!!!!!!!\n");
+    // printf("I am killed!!!!!!!!!!!!!!!\n");
     exit(-1);
   }
 

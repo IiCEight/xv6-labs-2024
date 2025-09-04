@@ -2128,6 +2128,11 @@ kernmem(char *s)
   int pid;
 
   for(a = (char*)(KERNBASE); a < (char*) (KERNBASE+2000000); a += 50000){
+    if((uint64)a % 200000 == 0)
+    {
+        printf("fork()\n");
+    }
+      break;
     pid = fork();
     if(pid < 0){
       printf("%s: fork failed\n", s);
@@ -2186,12 +2191,17 @@ sbrkfail(char *s)
     exit(1);
   }
   for(i = 0; i < sizeof(pids)/sizeof(pids[0]); i++){
+    // printf("i = %d\n", i);
     if((pids[i] = fork()) == 0){
       // allocate a lot of memory
       sbrk(BIG - (uint64)sbrk(0));
       write(fds[1], "x", 1);
       // sit around until killed
-      for(;;) sleep(1000);
+      for(;;)
+      {
+        // printf("I am not dead yet\n");
+          sleep(1000);
+      }
     }
     if(pids[i] != -1)
       read(fds[0], &scratch, 1);
@@ -2201,6 +2211,7 @@ sbrkfail(char *s)
   // we'll be able to allocate here
   c = sbrk(PGSIZE);
   for(i = 0; i < sizeof(pids)/sizeof(pids[0]); i++){
+    // printf("i = %d\n", i);
     if(pids[i] == -1)
       continue;
     kill(pids[i]);
@@ -2221,18 +2232,22 @@ sbrkfail(char *s)
     // allocate a lot of memory.
     // this should produce a page fault,
     // and thus not complete.
+    printf("allocating a lot of memory\n");
     a = sbrk(0);
     sbrk(10*BIG);
     int n = 0;
     for (i = 0; i < 10*BIG; i += PGSIZE) {
-      n += *(a+i);
+        // printf("Access address %lx\n", (uint64)(a+i));
+      n += *(a+i); // Stucked Here, 
     }
     // print n so the compiler doesn't optimize away
     // the for loop.
     printf("%s: allocate a lot of memory succeeded %d\n", s, n);
     exit(1);
   }
+//   printf("wait begin pid: %d\n", getpid());
   wait(&xstatus);
+//   printf("wait end pid: %d\n", getpid());
   if(xstatus != -1 && xstatus != 2)
     exit(1);
 }

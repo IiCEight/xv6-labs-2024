@@ -139,8 +139,8 @@ syscall(void)
     // Use num to lookup the system call function for num, call it,
     // and store its return value in p->trapframe->a0
     p->trapframe->a0 = syscalls[num]();
-    if(num == 3)
-        printf("wait done and return to user mode\n");
+    // if(num == 3)
+        // printf("wait done and return to user mode\n");
   } else {
     printf("%d %s: unknown sys call %d\n",
             p->pid, p->name, num);
