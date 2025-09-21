@@ -35,6 +35,10 @@ consputc(int c)
 {
   if(c == BACKSPACE){
     // if the user typed backspace, overwrite with a space.
+    // Because a single ASCII backspace ('\b', 0x08) normally
+    // just moves the cursor one position to the left on most
+    // terminals — it does NOT erase the character that was already
+    // on the screen.
     uartputc_sync('\b'); uartputc_sync(' '); uartputc_sync('\b');
   } else {
     uartputc_sync(c);
