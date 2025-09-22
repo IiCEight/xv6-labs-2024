@@ -7,6 +7,7 @@
 #include "defs.h"
 #include "e1000_dev.h"
 
+/* Descriptor Queue Structure. Refer to [e1000 3.2.6 and 3.?.?] */
 #define TX_RING_SIZE 16
 static struct tx_desc tx_ring[TX_RING_SIZE] __attribute__((aligned(16)));
 static char *tx_bufs[TX_RING_SIZE];

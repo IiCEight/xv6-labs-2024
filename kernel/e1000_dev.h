@@ -112,14 +112,14 @@ struct tx_desc
 #define E1000_RXD_STAT_DD       0x01    /* Descriptor Done */
 #define E1000_RXD_STAT_EOP      0x02    /* End of Packet */
 
-// [E1000 3.2.3]
+// [E1000 3.2.3] table 3-1
 struct rx_desc
 {
   uint64 addr;       /* Address of the descriptor's data buffer */
   uint16 length;     /* Length of data DMAed into data buffer */
   uint16 csum;       /* Packet checksum */
-  uint8 status;      /* Descriptor status */
-  uint8 errors;      /* Descriptor Errors */
-  uint16 special;
+  uint8 status;      /* Descriptor status [E1000 3.2.3.1] */ 
+  uint8 errors;      /* Descriptor Errors [E1000 3.2.3.2] */
+  uint16 special;    /* Descriptor special [E1000 3.2.3.3] */
 };
 
