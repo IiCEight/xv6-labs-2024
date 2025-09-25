@@ -139,6 +139,13 @@ elif sys.argv[1] == "ping":
     print("ping: listening for UDP packets")
     while True:
         buf, raddr = sock.recvfrom(4096)
+        # Print destination (local) port for each received UDP packet
+        laddr = sock.getsockname()  # (ip, port) this socket is bound to
+        try:
+            print(f"ping: received UDP packet dst_port={laddr[1]} src={raddr} len={len(buf)}")
+        except Exception:
+            # Fallback in case f-strings or types cause issues in older envs
+            print("ping: received UDP packet dst_port=%s src=%s len=%d" % (laddr[1], raddr, len(buf)))
         sock.sendto(buf, raddr)
 elif sys.argv[1] == "grade":
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

@@ -18,10 +18,10 @@ static inline uint32 bswapl(uint32 val)
 
 // Use these macros to convert network bytes to the native byte order.
 // Note that Risc-V uses little endian while network order is big endian.
-#define ntohs bswaps
-#define ntohl bswapl
-#define htons bswaps
-#define htonl bswapl
+#define ntohs bswaps    // “network to host short” (16-bit)
+#define ntohl bswapl    // “network to host long” (32-bit).
+#define htons bswaps    // “host to network short” (16-bit)
+#define htonl bswapl    // “host to network long” (32-bit)
 
 
 //
@@ -126,3 +126,17 @@ struct dns_data {
   uint32 ttl;
   uint16 len;
 } __attribute__((packed));
+
+
+// Receive queue related definitions
+#define RECV_QUEUE_SIZE 16
+#define MAX_PORT_NUM 20
+
+// Each port has a recv queue
+struct recv_queue  {
+    uint16 port;                   // port number
+    uint64 q[RECV_QUEUE_SIZE];  // Store packet buf addr
+    int head;
+    int tail;
+    int size;                   // current size
+};

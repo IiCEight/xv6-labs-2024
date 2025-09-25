@@ -19,12 +19,17 @@ static uint8 host_mac[ETHADDR_LEN] = { 0x52, 0x55, 0x0a, 0x00, 0x02, 0x02 };
 
 static struct spinlock netlock;
 
+// For space saving, I use an expandable array for these recvqueues 
+// like vector<recv_queue> in C++ STL.
+// And recvqueuesend marks its end. But find one will cost O(N).
+static struct recv_queue recvqueues[MAX_PORT_NUM];
+static int recvqueuesend = 0;
+
 void
 netinit(void)
 {
   initlock(&netlock, "netlock");
 }
-
 
 //
 // bind(int port)
@@ -37,8 +42,18 @@ sys_bind(void)
   //
   // Your code here.
   //
-
-  return -1;
+    int port;
+    argint(0, &port);
+    acquire(&netlock);
+    if(recvqueuesend >= MAX_PORT_NUM)
+    {
+        release(&netlock);
+        printf("bind: Exceed maximum number of binded ports.\n");
+        return -1;
+    }
+    recvqueues[recvqueuesend++] = (struct recv_queue){port, {0}, 0, 0, 0};
+    release(&netlock);
+    return 0;
 }
 
 //
@@ -77,7 +92,97 @@ sys_recv(void)
   //
   // Your code here.
   //
-  return -1;
+    int dport;
+    uint64 srcaddr;
+    uint64 sportaddr;
+    uint64 bufaddr; 
+    int maxlen;
+    argint(0, &dport);
+    argaddr(1, &srcaddr);
+    argaddr(2, &sportaddr);
+    argaddr(3, &bufaddr);
+    argint(4, &maxlen);
+    
+    acquire(&netlock);
+    // Find recv queue with corresponding port.
+    int found = -1;
+    for(int i = 0; i < recvqueuesend; i++)
+    {
+        if(recvqueues[i].port == dport)
+        {
+            found = i;
+            break;
+        }
+    }
+    if(found == -1)
+    {
+        release(&netlock);
+        printf("recv: No bind port %d\n", dport);
+        return -1;
+    }
+
+    // Since wakeup will wake all the sleepers on the chan,
+    // so there may be multiple processes waiting on the same port.
+    // But only one process can get one packet each time.
+    // So we need to check the queue size in a while loop.
+    while(recvqueues[found].size == 0)
+    {
+        // sleep will auto release netlock and reacquire it when wakeup
+        sleep(&recvqueues[found], &netlock);
+    }
+
+    // assert recvqueues[found].size > 0
+    // Should never happen.
+    if(recvqueues[found].size == 0)
+    {
+        release(&netlock);
+        printf("ERROR sys_recv: recvqueues[found].size == 0 after sleep");
+        printf(" port: %d\n", dport);
+        return -1;
+    }
+
+    // dequeue a packet
+    char *buf = (char *)recvqueues[found].q[recvqueues[found].head];
+    recvqueues[found].head = (recvqueues[found].head + 1) % RECV_QUEUE_SIZE;
+    recvqueues[found].size--;
+    release(&netlock);
+
+    struct eth *eth = (struct eth *) buf;
+    struct ip *ip = (struct ip *)(eth + 1);
+    struct udp *udp = (struct udp *)(ip + 1);
+    // NOTE: udp->ulen includes header and Data field (payload)
+    int updpayloadlen = ntohs(udp->ulen) - sizeof(struct udp);
+    // printf("DEBUG: sys_recv: udp payload len = %d\n", updpayloadlen);
+    if(updpayloadlen > maxlen)
+    {
+        kfree(buf);
+        printf("ERROR sys_recv: payload len %d > maxlen %d\n", updpayloadlen, maxlen);
+        return -1;
+    }
+    // Copy the payload to user space buf.
+    struct proc *p = myproc();
+    if(copyout(p->pagetable, bufaddr, (char *)(udp + 1), updpayloadlen) < 0)
+    {
+        kfree(buf);
+        printf("ERROR sys_recv: copyout payload failed\n");
+        return -1;
+    }
+    uint32 srcip = ntohl(ip->ip_src);
+    uint16 sport = ntohs(udp->sport);
+    if(copyout(p->pagetable, srcaddr, (char *)&srcip, sizeof(srcip)) < 0)
+    {
+        kfree(buf);
+        printf("ERROR sys_recv: copyout srcip failed\n");
+        return -1;
+    }
+    if(copyout(p->pagetable, sportaddr, (char *)&sport, sizeof(sport)) < 0)
+    {
+        kfree(buf);
+        printf("ERROR sys_recv: copyout sport failed\n");
+        return -1;
+    }
+    kfree(buf);
+    return updpayloadlen;
 }
 
 // This code is lifted from FreeBSD's ping.c, and is copyright by the Regents
@@ -179,19 +284,69 @@ sys_send(void)
   return 0;
 }
 
+// NOTE: buf is needed to be freed.
+// If the packet is not valid, just free it and return.
+// If the packet is valid, enqueue it to recvqueue[] and wakeup 
+// sys_recv() to dequeue it and free it.
 void
 ip_rx(char *buf, int len)
 {
-  // don't delete this printf; make grade depends on it.
-  static int seen_ip = 0;
-  if(seen_ip == 0)
-    printf("ip_rx: received an IP packet\n");
-  seen_ip = 1;
+    // don't delete this printf; make grade depends on it.
+    static int seen_ip = 0;
+    if(seen_ip == 0)
+        printf("ip_rx: received an IP packet\n");
+    seen_ip = 1;
 
-  //
-  // Your code here.
-  //
-  
+    struct eth *eth = (struct eth *) buf;
+    struct ip *ip = (struct ip *)(eth + 1);
+    struct udp *udp = (struct udp *)(ip + 1);
+    // guarantee it's UDP packet.
+    if(ip->ip_p != IPPROTO_UDP)
+    {
+        kfree(buf);
+        printf("ip_rx: Not a UDP packet.\n");
+        return;
+    }
+    int found = -1;
+    uint16 destport = ntohs(udp->dport);
+    for(int i = 0; i < recvqueuesend; i++)
+    {
+        if(destport == recvqueues[i].port)
+        {
+            found = i;
+            break;
+        }
+    }
+    // guarantee the port is bound i.e., it is listening.
+    if (found == -1)
+    {
+        //----------- BUG TWO -----------
+        // WARNING: kfree must be called after printf, or the grader will fail!!!
+        // Since udp->dport is in buf!!!!
+        printf("ip_rx: UDP packet is not for a bound port %d.\n", ntohs(udp->dport));
+        kfree(buf);
+
+        return; 
+    }
+    printf("DEBUG: ip_rx: received UDP packet for bound port %d\n", destport);
+    // Now we this packet is valid packet which is waiting for sys_recv()
+    // Check if the recv queue is full.
+    acquire(&netlock);
+    if(recvqueues[found].size >= RECV_QUEUE_SIZE)
+    {
+        release(&netlock);
+        printf("ip_rx: recv queue is full.\n");
+        kfree(buf);
+        return;
+    }
+    // Enqueue it.
+    recvqueues[found].q[recvqueues[found].tail] = (uint64)buf;
+    recvqueues[found].tail = (recvqueues[found].tail + 1) % RECV_QUEUE_SIZE;
+    recvqueues[found].size++;
+    release(&netlock);
+    // Wake up sys_recv() to dequeue it.
+    wakeup(&recvqueues[found]);
+    return;
 }
 
 //

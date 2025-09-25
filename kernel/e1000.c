@@ -122,7 +122,7 @@ e1000_transmit(char *buf, int len)
   // the TX descriptor ring so that the e1000 sends it. Stash
   // a pointer so that it can be freed after send completes.
   //
-    printf("e1000_transmit: Begin.... length %d\n", len);
+    // printf("e1000_transmit: Begin.... length %d\n", len);
 
     if(len > PGSIZE)
     {
@@ -138,10 +138,10 @@ e1000_transmit(char *buf, int len)
         return -1;
     }
     // free old buffer and point to a new one which needs to transmit.
-    printf("Begin to free %ld\n", (uint64)txdp->addr);
+    // printf("Begin to free %ld\n", (uint64)txdp->addr);
     if(txdp->addr != 0)
         kfree((void *)txdp->addr);
-    printf("End to free %ld\n", (uint64)txdp->addr);
+    // printf("End to free %ld\n", (uint64)txdp->addr);
     txdp->addr = (uint64)buf;
     txdp->length = len;
     txdp->cmd = E1000_TXD_CMD_RS | E1000_TXD_CMD_EOP;
@@ -167,10 +167,24 @@ e1000_recv(void)
         if((rxdp->status & E1000_RXD_STAT_DD) == 0)
         {
             release(&e1000_lock);
-            printf("receive queue: head %d, tail %d\n", regs[E1000_RDH], regs[E1000_RDT]);
-            printf("No packet is available\n");
+            // printf("receive queue: head %d, tail %d\n", regs[E1000_RDH], regs[E1000_RDT]);
+            // printf("No packet is available\n");
             return;
         }
+        // Since we only implements UDP and descriptor buf size is 2048 which is
+        // greater than the max size of UDP packet (including headers),
+        // So we assume one descriptor contains one whole UDP packet.
+        //
+        // TODO: handle packets spanning multiple descriptors.
+        //
+        if((rxdp->status & E1000_RXD_STAT_EOP) == 0)
+        {
+            release(&e1000_lock);
+            printf("e1000_recv: Not a complete packet in one descriptor\n");
+            // panic("e1000_recv: Not a complete packet in one descriptor\n");
+            return;
+        }
+
         char * recvbuf = (char *)rxdp->addr;
         int len = rxdp->length;
         uint64 mem = (uint64)kalloc();

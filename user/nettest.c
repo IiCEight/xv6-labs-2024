@@ -377,7 +377,7 @@ ping2()
   
   for(int ii = 0; ii < 5; ii++){
     for(int port = 2006; port <= 2007; port++){
-      uint32 dst = 0x0A000202; // 10.0.2.2
+      uint32 dst = 0x0A000202; // 10.0.2.2 is the real PC ip.
       int dport = NET_TESTS_PORT;
       char buf[4];
       buf[0] = 'p';
@@ -425,6 +425,9 @@ ping2()
       buf[1] = ' ';
       buf[2] = (port == 2006 ? 'a' : 'A') + ii;
       buf[3] = '!';
+
+    //   printf("port=%d ii=%d: recv_buf: %d %d %d\n", port, ii, (int)ibuf[0], (int)ibuf[1], (int)ibuf[2]);
+    //   printf("port=%d ii=%d: expect_buf: %d %d %d\n", port, ii, (int)buf[0], (int)buf[1], (int)buf[2]);
 
       if(memcmp(buf, ibuf, 3) != 0){
         // possibly recv() sees packets out of order.
