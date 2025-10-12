@@ -6,6 +6,7 @@
 
 volatile static int started = 0;
 
+
 // start() jumps here in supervisor mode on all CPUs.
 void
 main()
@@ -45,6 +46,7 @@ main()
       ;
     __sync_synchronize();
     printf("hart %d starting\n", cpuid());
+    kinit();         // physical page allocator
     kvminithart();    // turn on paging
     trapinithart();   // install kernel trap vector
     plicinithart();   // ask PLIC for device interrupts

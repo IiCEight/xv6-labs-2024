@@ -85,6 +85,7 @@ acquire(struct spinlock *lk)
   // past this point, to ensure that the critical section's memory
   // references happen strictly after the lock is acquired.
   // On RISC-V, this emits a fence instruction.
+  // See xv6 book 6.7
   __sync_synchronize();
 
   // Record info about lock acquisition for holding() and debugging.

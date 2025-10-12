@@ -9,7 +9,9 @@
 #include "riscv.h"
 #include "defs.h"
 
-void freerange(void *pa_start, void *pa_end);
+// Forward declare so the prototype sees the same tag as the later definition.
+struct kernelmem;
+void freerange(struct kernelmem *kmem_ptr, void *pa_start, void *pa_end);
 
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
@@ -18,25 +20,65 @@ struct run {
   struct run *next;
 };
 
-struct {
+struct kernelmem{
   struct spinlock lock;
   struct run *freelist;
-} kmem;
+} kmem[NCPU];
+
+int getCpuId() {
+    // Turn off interrupts
+    push_off();
+    int id = cpuid();
+    pop_off();
+    return id;
+}
+
+void getKmemLockName(char *lockname, int len) {
+  // Turn off interrupts
+  push_off();
+  int id = cpuid();
+  pop_off();
+  snprintf(lockname, len, "kmem%d", id);
+}
 
 void
 kinit()
 {
-  initlock(&kmem.lock, "kmem");
-  freerange(end, (void*)PHYSTOP);
+    // Turn off interrupts
+    char lockname[16];
+    getKmemLockName(lockname, sizeof(lockname));
+    printf("lockname: %s\n", lockname);
+    int id = getCpuId();
+    initlock(&kmem[id].lock, lockname);
+
+    freerange(&kmem[id], end, (void*)PHYSTOP);
 }
 
 void
-freerange(void *pa_start, void *pa_end)
+freerange(struct kernelmem *kmem_ptr, void *pa_start, void *pa_end)
 {
-  char *p;
-  p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
-    kfree(p);
+    char *p;
+    p = (char*)PGROUNDUP((uint64)pa_start);
+    char *pstart = p;
+    char *pend = (char*)PGROUNDDOWN((uint64)pa_end);
+    int eachPageNum = (int)(((uint64)(pend - pstart)) / PGSIZE / NCPU);
+    printf("eachPageNum: %d\n", eachPageNum);
+    int id = getCpuId();
+
+        // For debug
+    if (id == 0) {
+        printf("All pages: %d\n", (int)((pend-pstart) / PGSIZE));
+        printf("Number of CPUs: %d \n", NCPU);
+    }
+
+  // allocate each cpu its own pages
+    p += eachPageNum * PGSIZE * id;
+    char * endaddr = (char*)(PGSIZE * eachPageNum * (id + 1) + pstart);
+    if (id == NCPU - 1) {
+        endaddr = pend;
+    }
+    for(; p + PGSIZE <= endaddr; p += PGSIZE)
+        kfree(p);
 }
 
 // Free the page of physical memory pointed at by pa,
@@ -47,6 +89,7 @@ void
 kfree(void *pa)
 {
   struct run *r;
+    int id = getCpuId();
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
@@ -56,10 +99,10 @@ kfree(void *pa)
 
   r = (struct run*)pa;
 
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+  acquire(&kmem[id].lock);
+  r->next = kmem[id].freelist;
+  kmem[id].freelist = r;
+  release(&kmem[id].lock);
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -68,15 +111,37 @@ kfree(void *pa)
 void *
 kalloc(void)
 {
-  struct run *r;
+    struct run *r;
+    int id = getCpuId();
 
-  acquire(&kmem.lock);
-  r = kmem.freelist;
-  if(r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
+    acquire(&kmem[id].lock);
+    r = kmem[id].freelist;
+    if(r)
+        kmem[id].freelist = r->next;
+    release(&kmem[id].lock);
 
-  if(r)
-    memset((char*)r, 5, PGSIZE); // fill with junk
-  return (void*)r;
+    // No free page, try to steal from other cpus
+    // NOTE: We need to release the lock of current cpu 
+    // before acquiring other cpu's lock. Otherwise it may
+    // lead to deadlock.
+    if (r == 0)
+    {
+        for(int i = 0; i < NCPU; i++) 
+        {
+            if(i == id)
+            continue;
+            acquire(&kmem[i].lock);
+            r = kmem[i].freelist;
+            if(r) {
+                kmem[i].freelist = r->next;
+                release(&kmem[i].lock);
+                break;
+            }
+            release(&kmem[i].lock);
+        }
+    }
+
+    if(r)
+        memset((char*)r, 5, PGSIZE); // fill with junk
+    return (void*)r;
 }
