@@ -212,6 +212,8 @@ alloc3_desc(int *idx)
   return 0;
 }
 
+// This is hardware interface to read/write a block
+// to disk. write == 0 for read, write != 0 for write.
 void
 virtio_disk_rw(struct buf *b, int write)
 {

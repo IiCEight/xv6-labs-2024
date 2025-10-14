@@ -69,8 +69,11 @@ balloc(uint dev)
   struct buf *bp;
 
   bp = 0;
+  // scan all bitmap blocks
   for(b = 0; b < sb.size; b += BPB){
+    // bp is pointer to block of bitmap
     bp = bread(dev, BBLOCK(b, sb));
+    // scan this block, bi is bit index in this block b
     for(bi = 0; bi < BPB && b + bi < sb.size; bi++){
       m = 1 << (bi % 8);
       if((bp->data[bi/8] & m) == 0){  // Is block free?
@@ -373,8 +376,12 @@ iunlockput(struct inode *ip)
 //
 // The content (data) associated with each inode is stored
 // in blocks on the disk. The first NDIRECT block numbers
-// are listed in ip->addrs[].  The next NINDIRECT blocks are
+// are listed in ip->addrs[].  The next NSGINDIRECT blocks are
 // listed in block ip->addrs[NDIRECT].
+// Then the next NDBINDIRECT blocks are listed in
+// block ip->addrs[NDIRECT+1], which is a block of
+// NDBINDIRECT block numbers, each of which point to a block
+// of NSGINDIRECT block numbers.
 
 // Return the disk block address of the nth block in inode ip.
 // If there is no such block, bmap allocates one.
@@ -396,7 +403,7 @@ bmap(struct inode *ip, uint bn)
   }
   bn -= NDIRECT;
 
-  if(bn < NINDIRECT){
+  if(bn < NSGINDIRECT){
     // Load indirect block, allocating if necessary.
     if((addr = ip->addrs[NDIRECT]) == 0){
       addr = balloc(ip->dev);
@@ -414,6 +421,61 @@ bmap(struct inode *ip, uint bn)
       }
     }
     brelse(bp);
+    return addr;
+  }
+  bn -= NSGINDIRECT;
+
+  if(bn < NDBINDIRECT){
+    // Load doubly-indirect block, allocating if necessary.
+    if((addr = ip->addrs[NDIRECT+1]) == 0){
+        // if there is no doubly-indirect block
+        // create one.
+      addr = balloc(ip->dev);
+      if(addr == 0)
+        return 0;
+      ip->addrs[NDIRECT+1] = addr;
+    }
+    bp = bread(ip->dev, addr);
+    a = (uint*)bp->data;
+    if((addr = a[bn / NSGINDIRECT]) == 0){
+        // If there is no singly-indirect block in
+        // the corresponding entry of doubly-indirect
+        // block, create one.
+      addr = balloc(ip->dev);
+      if(addr){
+        a[bn / NSGINDIRECT] = addr;
+        log_write(bp);
+      } else {
+        // create singly-indirect block failed.
+        printf("bmap: out of blocks\n");
+        return 0;
+      }
+    }
+    // Now we don't need the doubly-indirect block pointer.
+    brelse(bp);
+ 
+    // find final data block from this singly-indirect block.
+    bp = bread(ip->dev, addr);
+    a = (uint*)bp->data;
+    if((addr = a[bn % NSGINDIRECT]) == 0){
+        // If there is no data block in the
+        // corresponding entry of singly-indirect
+        // block, create one.
+      addr = balloc(ip->dev);
+      if(addr){
+        a[bn % NSGINDIRECT] = addr;
+        log_write(bp);
+      }
+      else
+      {
+        // create data block failed.
+        brelse(bp);
+        printf("bmap: out of blocks\n");
+        return 0;
+      }
+    }
+    brelse(bp);
+    
     return addr;
   }
 
@@ -439,13 +501,41 @@ itrunc(struct inode *ip)
   if(ip->addrs[NDIRECT]){
     bp = bread(ip->dev, ip->addrs[NDIRECT]);
     a = (uint*)bp->data;
-    for(j = 0; j < NINDIRECT; j++){
+    for(j = 0; j < NSGINDIRECT; j++){
       if(a[j])
         bfree(ip->dev, a[j]);
     }
     brelse(bp);
     bfree(ip->dev, ip->addrs[NDIRECT]);
     ip->addrs[NDIRECT] = 0;
+  }
+
+  // Used for singly-indirect block pointer.
+  struct buf *sbp;
+  if(ip->addrs[NDIRECT+1]){
+    // free doubly-indirect blocks
+    bp = bread(ip->dev, ip->addrs[NDIRECT+1]);
+    a = (uint*)bp->data;
+    for(i = 0; i < NSGINDIRECT; i++){
+        // If corresponding entry of doubly-indirect
+        // block is not zero, then free the singly-indirect
+        // blocks pointed by this entry.
+      if(a[i])
+      {
+        sbp = bread(ip->dev, a[i]);
+        uint *c = (uint*)sbp->data;
+        for(j = 0; j < NSGINDIRECT; j++){
+          if(c[j])
+            bfree(ip->dev, c[j]);
+        }
+        brelse(sbp);
+        bfree(ip->dev, a[i]);
+        a[i] = 0;
+      }
+    }
+    brelse(bp);
+    bfree(ip->dev, ip->addrs[NDIRECT+1]);
+    ip->addrs[NDIRECT+1] = 0;
   }
 
   ip->size = 0;
@@ -547,7 +637,8 @@ namecmp(const char *s, const char *t)
 }
 
 // Look for a directory entry in a directory.
-// If found, set *poff to byte offset of entry.
+// If found, set *poff to byte offset of entry,
+// in case the caller wishes to edit it.
 struct inode*
 dirlookup(struct inode *dp, char *name, uint *poff)
 {
@@ -648,16 +739,25 @@ skipelem(char *path, char *name)
 // If parent != 0, return the inode for the parent and copy the final
 // path element into name, which must have room for DIRSIZ bytes.
 // Must be called inside a transaction since it calls iput().
+//
+//The procedure namex may take a long time to complete: 
+// it could involve several disk operations to read
+// inodes and directory blocks for the directories
+// traversed in the pathname (if they are not in 
+// the buffer cache).
 static struct inode*
 namex(char *path, int nameiparent, char *name)
 {
   struct inode *ip, *next;
 
+  // If Start with /, start from root
+  // Otherwise, use current working directory
   if(*path == '/')
     ip = iget(ROOTDEV, ROOTINO);
   else
     ip = idup(myproc()->cwd);
 
+    // /a/b.c
   while((path = skipelem(path, name)) != 0){
     ilock(ip);
     if(ip->type != T_DIR){
@@ -683,6 +783,7 @@ namex(char *path, int nameiparent, char *name)
   return ip;
 }
 
+// Look up and return the inode for a path name. e.g. /a/b.c
 struct inode*
 namei(char *path)
 {
@@ -690,6 +791,8 @@ namei(char *path)
   return namex(path, 0, name);
 }
 
+// Give a directory path(Only directory, /a/b.c is not allowed)
+// return the inode of its **parent** directory
 struct inode*
 nameiparent(char *path, char *name)
 {

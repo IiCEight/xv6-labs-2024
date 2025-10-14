@@ -554,6 +554,9 @@ forkret(void)
 
 // Atomically release lock and sleep on chan.
 // Reacquires lock when awakened.
+// Sleep is used for synchronization 
+// between processes usually, so lk is used to 
+// protect the shared data between processes.
 void
 sleep(void *chan, struct spinlock *lk)
 {
