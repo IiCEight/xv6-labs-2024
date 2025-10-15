@@ -25,4 +25,8 @@ barrier
 .DS_Store
 *.dSYM
 *.pcap
+<<<<<<< HEAD
 .vscode/
+=======
+.vscode/
+>>>>>>> 4696870e0555c43564f3b21655607679d8c0cbc6
