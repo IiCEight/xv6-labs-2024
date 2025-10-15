@@ -1,0 +1,19 @@
+{
+    "files.associations": {
+        "riscv.h": "c",
+        "types.h": "c",
+        "fcntl.h": "c",
+        "user.h": "c",
+        "param.h": "c",
+        "spinlock.h": "c",
+        "memlayout.h": "c",
+        "proc.h": "c",
+        "defs.h": "c",
+        "stat.h": "c",
+        "net.h": "c",
+        "array": "c",
+        "string_view": "c",
+        "initializer_list": "c",
+        "string": "c"
+    }
+}

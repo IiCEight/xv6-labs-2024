@@ -784,6 +784,7 @@ namex(char *path, int nameiparent, char *name)
 }
 
 // Look up and return the inode for a path name. e.g. /a/b.c
+// It returns an unlocked but referenced inode.
 struct inode*
 namei(char *path)
 {

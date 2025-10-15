@@ -242,6 +242,15 @@ bad:
   return -1;
 }
 
+
+// Create a file (or directory) with the given path name.
+// If it already exists, return the inode.
+// It needs to be called inside a transaction,
+// because it calls iput().
+// On success, it returns an locked and referenced inode.
+// On failure, it returns NULL.
+// We need to unlock and iput the inode after using inode
+// returned by create.
 static struct inode*
 create(char *path, short type, short major, short minor)
 {
@@ -258,6 +267,8 @@ create(char *path, short type, short major, short minor)
     ilock(ip);
     if(type == T_FILE && (ip->type == T_FILE || ip->type == T_DEVICE))
       return ip;
+    if(type == T_SYMLINK && ip->type == T_SYMLINK)
+        return ip;
     iunlockput(ip);
     return 0;
   }
@@ -301,6 +312,46 @@ create(char *path, short type, short major, short minor)
   return 0;
 }
 
+// Caller must hold ip->lock.
+// Returns a locked and referenced inode.
+struct inode * followSymlink(struct inode *ip, int nestedCount) {
+    if (nestedCount > MAXNESTEDSYMLINK) {
+        printf("followsymlink: too many nested symlinks\n");
+        iunlockput(ip);
+        return 0; // Too many nested symlinks.
+    }
+    if (ip->type != T_SYMLINK) {
+        iunlockput(ip);
+        return 0; // Not a symlink, nothing to do.
+    }
+    
+    // Read the target path from the symlink file.
+    char target[MAXPATH];
+    int len = ip->size;
+    if (len > MAXPATH) {
+        panic("followsymlink: symlink target path too long");
+    }
+    if (readi(ip, 0, (uint64)target, 0, len) != len) {
+        printf("followsymlink: readi failed\n");
+        iunlockput(ip);
+        return 0; // Error reading symlink target.
+    }
+    iunlockput(ip); // Unlock current inode before following the link.
+    
+    struct inode *newip = namei(target);
+    if (newip == 0) {
+        printf("followsymlink: target does not exist: %s\n", target);
+        iput(ip);
+        return 0; // Target does not exist.
+    }
+    ilock(newip); // Lock the new inode.
+    
+    if (newip->type == T_SYMLINK)
+        return followSymlink(newip, nestedCount + 1); // Recursively follow if it's also a symlink.
+    
+    return newip; // Successfully followed the symlink.
+}
+
 uint64
 sys_open(void)
 {
@@ -340,6 +391,16 @@ sys_open(void)
     end_op();
     return -1;
   }
+  
+    if (!(omode & O_NOFOLLOW) && ip->type == T_SYMLINK) {
+        ip = followSymlink(ip, 1);
+        if (ip == 0) {
+            // unlock and put already done in followSymlink
+            end_op();
+            return -1; // Error following symlink.
+        }
+        // Now ip is the inode of the target file.
+    }
 
   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
     if(f)
@@ -369,6 +430,8 @@ sys_open(void)
 
   return fd;
 }
+
+
 
 uint64
 sys_mkdir(void)
@@ -502,4 +565,43 @@ sys_pipe(void)
     return -1;
   }
   return 0;
+}
+
+// Note that target does not need to exist
+// for the system call to succeed
+uint64
+sys_symlink(void)
+{
+    char path[MAXPATH], target[MAXPATH];
+    struct inode *ip;
+
+    if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
+    {
+        printf("sys_symlink: argstr failed\n");
+        return -1;
+    }
+    printf("sys_symlink: target %s, path %s\n", target, path);
+
+
+    begin_op();
+    // create a file in the path
+    if ((ip = create(path, T_SYMLINK, 0, 0)) == 0) {
+        end_op();
+        printf("sys_symlink: create failed\n");
+        return -1;
+    }
+    // write the target to the symlink file,
+    // i.e., the data of the inode of the symlink file
+    // We don't need to lock the inode, since create does.
+    int len = strlen(target);
+    if (writei(ip, 0, (uint64)target, 0, len) != len) {
+        iunlockput(ip);
+        end_op();
+        printf("sys_symlink: writei failed\n");
+        return -1;
+    }
+
+    iunlockput(ip);
+    end_op();
+    return 0;
 }
