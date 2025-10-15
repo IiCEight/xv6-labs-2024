@@ -69,16 +69,11 @@ balloc(uint dev)
   struct buf *bp;
 
   bp = 0;
-<<<<<<< HEAD
   // scan all bitmap blocks
   for(b = 0; b < sb.size; b += BPB){
     // bp is pointer to block of bitmap
     bp = bread(dev, BBLOCK(b, sb));
     // scan this block, bi is bit index in this block b
-=======
-  for(b = 0; b < sb.size; b += BPB){
-    bp = bread(dev, BBLOCK(b, sb));
->>>>>>> 408565dc36c7595de3e68284a3789c081901b88f
     for(bi = 0; bi < BPB && b + bi < sb.size; bi++){
       m = 1 << (bi % 8);
       if((bp->data[bi/8] & m) == 0){  // Is block free?
