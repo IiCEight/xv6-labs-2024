@@ -63,7 +63,10 @@ bget(uint dev, uint blockno)
   acquire(&bcache.lock);
 
   // Is the block already cached?
+<<<<<<< HEAD
   // It cost O(N)
+=======
+>>>>>>> 408565dc36c7595de3e68284a3789c081901b88f
   for(b = bcache.head.next; b != &bcache.head; b = b->next){
     if(b->dev == dev && b->blockno == blockno){
       b->refcnt++;
@@ -97,7 +100,10 @@ bread(uint dev, uint blockno)
 
   b = bget(dev, blockno);
   if(!b->valid) {
+<<<<<<< HEAD
 
+=======
+>>>>>>> 408565dc36c7595de3e68284a3789c081901b88f
     virtio_disk_rw(b, 0);
     b->valid = 1;
   }

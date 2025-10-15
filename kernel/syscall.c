@@ -127,7 +127,10 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+<<<<<<< HEAD
 [SYS_symlink] sys_symlink,
+=======
+>>>>>>> 408565dc36c7595de3e68284a3789c081901b88f
 };
 
 void
