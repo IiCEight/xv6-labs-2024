@@ -79,7 +79,27 @@ struct trapframe {
   /* 280 */ uint64 t6;
 };
 
+// A mmapvma describes a mapping of a file to a region of a process's
+// virtual address space.
+struct mmapvma {
+    uint64 addr;        // starting virtual address of the mapping
+    uint64 length;      // length of the mapping in bytes (length == 0 means unused VMA)
+    int prot;           // protection flags (only support PROT_READ and PROT_WRITE and both)
+    int flags;          // mapping flags (only support MAP_SHARED and MAP_PRIVATE)
+    int fd;             // file descriptor
+    struct file *file;  // file pointer
+    //(offset is acquired to be zero, since we only support offset zero)
+    uint64 offset;      // offset in the file 
+};
+
+
+
+// number of VMAs per process
+#define NMMAPVMA 16
+
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
+
+
 
 // Per-process state
 struct proc {
@@ -103,5 +123,6 @@ struct proc {
   struct context context;      // swtch() here to run process
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
+  struct mmapvma mmapvmas[NMMAPVMA]; // Memory-mapped VMAs
   char name[16];               // Process name (debugging)
 };

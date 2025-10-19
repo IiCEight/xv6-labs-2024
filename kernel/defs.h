@@ -37,6 +37,7 @@ void            fileinit(void);
 int             fileread(struct file*, uint64, int n);
 int             filestat(struct file*, uint64 addr);
 int             filewrite(struct file*, uint64, int n);
+int             writePartialFile(struct file*, uint64, int, int);
 
 // fs.c
 void            fsinit(int);
@@ -149,6 +150,9 @@ int             fetchstr(uint64, char*, int);
 int             fetchaddr(uint64, uint64*);
 void            syscall();
 
+//sysfile.c
+int             munmap(uint64 addr, int length);
+
 // trap.c
 extern uint     ticks;
 void            trapinit(void);
@@ -181,6 +185,7 @@ uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
+uint64          findFreeVMA(pagetable_t, size_t, uint64);
 #if defined(LAB_PGTBL) || defined(SOL_MMAP)
 void            vmprint(pagetable_t);
 #endif

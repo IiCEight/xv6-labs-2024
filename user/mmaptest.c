@@ -111,7 +111,9 @@ mmap_test(void)
   char *p = mmap(0, PGSIZE*2, PROT_READ, MAP_PRIVATE, fd, 0);
   if (p == MAP_FAILED)
     err("mmap (1)");
+//   printf("DEBUG: mmap returned address %p\n", p);
   _v1(p);
+//   printf("DEBUG: mmap verified content\n");
   if (munmap(p, PGSIZE*2) == -1)
     err("munmap (1)");
 
@@ -179,6 +181,8 @@ mmap_test(void)
   for (i = PGSIZE; i < PGSIZE*2; i++)
     p[i] = 'C';
 
+//   p[PGSIZE*3 -10] = 'D';
+
   // unmap just the first two of three pages of mapped memory.
   if (munmap(p, PGSIZE*2) == -1)
     err("munmap (3)");
@@ -197,8 +201,13 @@ mmap_test(void)
     if (buf[i] != 'B')
       err("file page 0 does not contain modifications");
   }
-  if(read(fd, buf, PGSIZE) != PGSIZE/2)
-    err("dirty read #2");
+  int readSZ = 0;
+  if((readSZ = read(fd, buf, PGSIZE)) != PGSIZE/2)
+  {
+      printf("!!!!!!! read size=%d\n", readSZ);
+      err("dirty read #2");
+  }
+    
   for (i = 0; i < PGSIZE/2; i++){
     if (buf[i] != 'C')
       err("file page 1 does not contain modifications");

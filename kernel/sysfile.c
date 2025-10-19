@@ -10,10 +10,10 @@
 #include "param.h"
 #include "stat.h"
 #include "spinlock.h"
-#include "proc.h"
-#include "fs.h"
 #include "sleeplock.h"
+#include "fs.h"
 #include "file.h"
+#include "proc.h"
 #include "fcntl.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
@@ -502,4 +502,203 @@ sys_pipe(void)
     return -1;
   }
   return 0;
+}
+
+uint64 sys_mmap(void) 
+{
+    uint64 addr;
+    int length, prot, flags, fd, offset;
+    struct proc *p = myproc();
+
+    argaddr(0, &addr);
+    if (addr != 0)
+        panic("sys_mmap only supports that addr must be 0");
+    argint(1, &length);
+    if (length <= 0)
+        return -1;
+    argint(2, &prot);
+    argint(3, &flags);
+    argint(4, &fd);
+    if (fd < 0 || fd >= NOFILE || (p->ofile[fd] == 0))
+        return -1;
+    argint(5, &offset);
+    // get file structure corresponding to fd
+    struct file *f = p->ofile[fd];
+
+    if (flags == MAP_SHARED && (prot & PROT_WRITE) && (f->writable == 0)) {
+        // cannot map a file as writable if the file is not opened as writable
+        printf("DEBUG: sys_mmap failed: file fd %d not opened as writable\n", fd);
+        return -1;
+    }
+
+    // Increase file reference count
+    f = filedup(f);
+
+    // find a enough and free virtual address to map
+    if ((addr = findFreeVMA(p->pagetable, length, p->sz)) == 0) {
+        printf("DEBUG: sys_mmap failed to find free VMA\n");
+        return -1;
+    }
+
+    // Add one entry to mmapvmas
+    // Do I need lock?
+    for (int i = 0; i < NMMAPVMA; i++) {
+        if (p->mmapvmas[i].length == 0) {
+            p->mmapvmas[i].addr = addr;
+            p->mmapvmas[i].length = length;
+            p->mmapvmas[i].prot = prot;
+            p->mmapvmas[i].flags = flags;
+            p->mmapvmas[i].file = f;
+            p->mmapvmas[i].fd = fd;
+            p->mmapvmas[i].offset = offset;
+            break;
+        }
+        if (i == NMMAPVMA - 1) {
+            // No free mmapvma entry
+            return -1;
+        }
+    }
+    printf("------- sys_mmap called -------\n");
+    printf("sys_mmap mapped addr 0x%lx length %d\n", addr, length);
+    return addr;
+}
+
+// BUG: type cannot be unsigned.
+int min(int a, int b) {
+    return a < b ? a : b;
+}
+
+int max(int a, int b) {
+    return a > b ? a : b;
+}
+
+int munmap(uint64 addr, int length) {
+    printf("------- sys_munmap called -------\n");
+    printf("sys_munmap unmapping addr 0x%lx length %d\n", addr, length);
+    int idx;
+    struct proc *p = myproc();
+    struct mmapvma *vma = p->mmapvmas;
+    if (length < 0)
+        return -1; 
+    else if (length == 0)
+        return 0;
+
+    // find the mmap VMA corresponding to addr
+    for(idx = 0; idx < NMMAPVMA; idx++) {
+        if (vma[idx].addr <= addr && addr < vma[idx].addr + vma[idx].length)
+            break;
+    }
+    if (idx == NMMAPVMA) {
+        // No such mmap VMA
+        printf("sys_munmap: no such mmap VMA for address 0x%lx\n", addr);
+        return -1;
+    }
+
+    // check if addr is at the start or end of the VMA
+    if (addr != vma[idx].addr && 
+        addr + length < vma[idx].addr + vma[idx].length) {
+        // not at start or end
+        printf("sys_munmap: addr 0x%lx is not at start or end of VMA\n", addr);
+        return -1;
+    }
+    printf("DEBUG: sys_munmap found mmap VMA: addr 0x%lx length %ld bytes\n", 
+            vma[idx].addr, vma[idx].length);
+    printf("DEBUG: sys_munmap unmapping addr 0x%lx length %d bytes\n", addr, length);
+
+    // correct the length
+    length = min(length, vma[idx].addr + vma[idx].length - addr);
+
+    // Write back to file if MAP_SHARED
+    if(vma[idx].flags & MAP_SHARED) {
+        // BUG: When writing back, we cann't exceed the file size.
+        // If the file is smaller than the mapped region, we need to adjust the length.
+        // We only support file offset zero now.
+        int offsetInFile = (int)(addr - vma[idx].addr + vma[idx].offset);
+        ilock(vma[idx].file->ip);
+        int filesize = vma[idx].file->ip->size;
+        iunlock(vma[idx].file->ip);
+        printf("Offset in file: %d, file size: %d bytes\n", offsetInFile, filesize);
+        int writeFilelength = min(length, filesize - offsetInFile);
+        writeFilelength = max(writeFilelength, 0);
+        printf("write file length: %d bytes\n", writeFilelength);
+
+        // if(writePartialFile(vma[idx].file, addr,
+        //         writeFilelength, offsetInFile) < 0) {
+        //     printf("sys_munmap: writePartialFile failed for addr 0x%lx length %d bytes\n", addr, length);
+        //     return -1;
+        // }
+
+        // Write back page by page
+        // skip all not mapped pages
+        for (uint64 a = addr;  writeFilelength > 0; a += PGSIZE) {
+            if (walkaddr(p->pagetable, a) == 0) {
+                offsetInFile += PGSIZE;
+                writeFilelength -= PGSIZE;
+                continue;
+            }
+            printf("add %lx, size %d, off %d\n", a, min(PGSIZE, writeFilelength), offsetInFile);
+            if(writePartialFile(vma[idx].file, a,
+                    min(PGSIZE, writeFilelength), offsetInFile) < 0) {
+                printf("sys_munmap: writePartialFile failed for addr 0x%lx length %d bytes\n", addr, length);
+                return -1;
+            }
+            offsetInFile += PGSIZE;
+            writeFilelength -= PGSIZE;
+        }
+
+    }
+    // unmap the pages from page table
+    // skip all not mapped pages
+    for (uint64 a = addr; a < addr + length; a += PGSIZE) {
+        if (walkaddr(p->pagetable, a) == 0) {
+            continue;
+        }
+        uvmunmap(p->pagetable, a, 1, 1);
+    }
+
+    ilock(vma[idx].file->ip);
+    int fileSize = vma[idx].file->ip->size;
+    iunlock(vma[idx].file->ip);
+    printf("FILE SIZE AFTER MUNMAP: %d bytes\n", fileSize);
+
+    if (length < vma[idx].length) {
+        // adjust the VMA
+        if (addr == vma[idx].addr) {
+            // unmap at start
+            vma[idx].addr += length;
+            vma[idx].length -= length;
+            vma[idx].offset += length;
+        } else
+            vma[idx].length -= length;
+    } else {
+        // remove the VMA and decrease file reference count
+        fileclose(vma[idx].file);
+        vma[idx].addr = 0;
+        vma[idx].length = 0;
+        vma[idx].prot = 0;
+        vma[idx].flags = 0;
+        vma[idx].file = 0;
+        vma[idx].fd = -1;
+        vma[idx].offset = 0;
+    }
+
+    printf("sys_munmap completed unmapping new addr 0x%lx new length %ld bytes\n", vma[idx].addr, vma[idx].length);
+
+    return 0;
+}
+
+
+// NOTE: munmap only support unmap at the start, 
+// or at the end, or the whole region 
+// (but not punch a hole in the middle of a region).
+// Since this will lead to fragmentation of mmapvmas array.
+// For simplicity, we will leave this for future work.
+uint64 sys_munmap(void) 
+{
+    uint64 addr;
+    int length;
+
+    argaddr(0, &addr);
+    argint(1, &length);
+    return munmap(addr, length);
 }

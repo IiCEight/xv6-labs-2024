@@ -2,9 +2,13 @@
 #include "param.h"
 #include "memlayout.h"
 #include "riscv.h"
-#include "spinlock.h"
-#include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
+#include "spinlock.h"
+#include "sleeplock.h"
+#include "fs.h"
+#include "file.h"
+#include "proc.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -27,6 +31,42 @@ void
 trapinithart(void)
 {
   w_stvec((uint64)kernelvec);
+}
+
+// Check if the given virtual address 'va' falls within any of the
+// mmap VMAs of the process 'p'.
+// Return index of the mmap VMA if found, -1 otherwise.
+
+int checkMmapVMA(struct proc *p, uint64 va) {
+    for (int i = 0; i < NMMAPVMA; i++) {
+        if (p->mmapvmas[i].length > 0) {
+            uint64 start = p->mmapvmas[i].addr;
+            uint64 end = start + p->mmapvmas[i].length;
+            if (va >= start && va < end) {
+                return i;
+            }
+        }
+    }
+    return -1;
+}
+
+// print the contents of a physical page
+void printPhysicalPage(uint64 pa) {
+    char *p = (char *)pa;
+    char last = '\n', now;
+    int count = 1;
+    for (char i = 0; i < PGSIZE; i++) {
+        now = *(p + i);
+        if(last == now) {
+            count++;
+        } else {
+            printf("%d x %d", (int)last, count);
+            printf("\n");
+            last = now;
+            count = 1;
+        }
+    }
+    printf("\n");
 }
 
 //
@@ -67,6 +107,66 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if (r_scause() == 15 || r_scause() == 13) {
+    // page fault
+    uint64 va = r_stval(); // the faulting address.
+    printf("Page fault at address 0x%lx, pid=%d\n", va, p->pid);
+    uint64 pa = walkaddr(p->pagetable, va);
+    if(pa != 0) {
+        panic("But the address is already mapped to physical address\n");
+    }
+    int vmaIndex = checkMmapVMA(p, va);
+    if (vmaIndex == -1) {
+        printf("No mmap VMA found for address 0x%lx, pid=%d\n", va, p->pid);
+        setkilled(p);
+    } else {
+        // Handle the page fault by reading 4096 bytes
+        // of the relevant file into that page.
+        struct mmapvma *vma = &p->mmapvmas[vmaIndex];
+        printf("File size %d bytes\n", vma->file->ip->size);
+        uint64 vaRoundDown = PGROUNDDOWN(va);
+        // since we only support offset zero
+        uint64 offsetInFile = vaRoundDown - vma->addr + vma->offset;
+        printf("Offset in file: 0x%lx\n", offsetInFile);
+
+        int perm = PTE_U | PTE_V;
+        if (vma->prot & PROT_READ) perm |= PTE_R;
+        if (vma->prot & PROT_WRITE) perm |= PTE_W;
+
+        // Allocate a new page
+        uint64 pa = (uint64)kalloc();
+        if (pa == 0) {
+            printf("kalloc failed for mmap at address 0x%lx, pid=%d\n", vaRoundDown, p->pid);
+            setkilled(p);
+        } else {
+            // NOTE: file size is not page-aligned
+            // We should zero the page first
+            memset((void*)pa, 0, PGSIZE);
+            // Load data from file into the allocated page
+            if (vma->file->readable == 0) {
+                panic("mmap VMA file is not readable");
+            }
+            struct inode *ip = vma->file->ip;
+            ilock(ip);
+            if (readi(ip, 0, pa, offsetInFile, PGSIZE) < 0) {
+                printf("readi failed for mmap at address 0x%lx, pid=%d\n", vaRoundDown, p->pid);
+                iunlock(ip);
+                kfree((void*)pa);
+                setkilled(p);
+            } else {
+                iunlock(ip);
+                // Map the page into the process's page table
+                if (mappages(p->pagetable, vaRoundDown, PGSIZE, pa, perm) < 0) {
+                    printf("mappages failed for mmap at address 0x%lx, pid=%d\n", vaRoundDown, p->pid);
+                    kfree((void*)pa);
+                    setkilled(p);
+                }
+            }
+        }
+        
+    }
+
+    printf("------ Page fault end ------\n");
   } else {
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());

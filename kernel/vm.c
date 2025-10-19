@@ -4,7 +4,11 @@
 #include "elf.h"
 #include "riscv.h"
 #include "defs.h"
+#include "spinlock.h"
+#include "sleeplock.h"
 #include "fs.h"
+#include "file.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -146,6 +150,8 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   uint64 a, last;
   pte_t *pte;
 
+    // printf("Begin mappages: va=0x%lx, size=0x%lx, pa=0x%lx, perm=0x%x\n", va, size, pa, perm);
+
   if((va % PGSIZE) != 0)
     panic("mappages: va not aligned");
 
@@ -161,7 +167,10 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;
     if(*pte & PTE_V)
-      panic("mappages: remap");
+    {
+        printf("pa %lx, pte content %lx\n", pa, *pte);
+        panic("mappages: remap");
+    }
     *pte = PA2PTE(pa) | perm | PTE_V;
     if(a == last)
       break;
@@ -448,4 +457,52 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+int checkMmapVMA(struct proc *p, uint64 va);
+
+
+// Find a free VMA slot in the process's mmapvmas array
+// return virtual address in user space.
+// return 0 if failed.
+uint64 findFreeVMA(pagetable_t pagetable, size_t sz, uint64 start) {
+    // printf("DEBUG: findFreeVMA start from %ld bytes\n", start);
+    uint64 startva;
+    uint64 szRounded = PGROUNDUP(sz);
+    struct mmapvma *vmas = myproc()->mmapvmas;
+    int found = 1;
+    for(startva = PGROUNDUP(start) + 10 * PGSIZE; startva < MAXVA; startva += PGSIZE)
+    {
+        found = 1;
+        for(uint64 offset = 0; offset < szRounded; offset += PGSIZE)
+        {
+            int va = startva + offset;
+            // check if va is in any existing mmap VMA
+            // This may be optimized.
+            for (int i = 0; i < NMMAPVMA; i++) {
+                if (vmas[i].length > 0) {
+                    uint64 vma_start = vmas[i].addr;
+                    uint64 vma_end = vma_start + vmas[i].length;
+                    if (va >= vma_start && va < vma_end) {
+                        found = 0;
+                        break;
+                    }
+                }
+            }
+            if(walkaddr(pagetable, va) != 0)
+            {
+                found = 0;
+                break;
+            }
+        }
+        if (found == 1) {
+            break;
+        }
+    }
+    if (found == 0) {
+        printf("findFreeVMA: no free VMA found\n");
+        return 0;
+    }
+    // printf("DEBUG: findFreeVMA found free VMA at va 0x%p for size %d bytes\n", (void*)startva, (int)sz);
+    return startva;
 }
