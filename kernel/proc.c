@@ -223,7 +223,6 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
-  printf("226!!!!!!!!!!!!!");
   uvmfree(pagetable, sz);
 }
 
@@ -324,11 +323,11 @@ fork(void)
 
   pid = np->pid;
 
-  for(int i = 0; i < NMMAPVMA; i++)
-  {
-    np->mmapvmas[i] = p->mmapvmas[i];
-    filedup(np->mmapvmas[i].file);
-  }
+//   for(int i = 0; i < NMMAPVMA; i++)
+//   {
+//     np->mmapvmas[i] = p->mmapvmas[i];
+//     filedup(np->mmapvmas[i].file);
+//   }
 
   release(&np->lock);
 
