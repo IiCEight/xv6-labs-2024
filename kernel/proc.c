@@ -323,11 +323,14 @@ fork(void)
 
   pid = np->pid;
 
-//   for(int i = 0; i < NMMAPVMA; i++)
-//   {
-//     np->mmapvmas[i] = p->mmapvmas[i];
-//     filedup(np->mmapvmas[i].file);
-//   }
+  for(int i = 0; i < NMMAPVMA; i++)
+  {
+    if (p->mmapvmas[i].length == 0)
+        continue;
+    np->mmapvmas[i] = p->mmapvmas[i];
+    if (np->mmapvmas[i].file != 0)
+        np->mmapvmas[i].file = filedup(np->mmapvmas[i].file);
+  }
 
   release(&np->lock);
 
@@ -382,6 +385,16 @@ exit(int status)
   end_op();
   p->cwd = 0;
 
+  for (int i = 0; i < NMMAPVMA; i++)
+  {
+    if (p->mmapvmas[i].length != 0)
+    {
+        // unmap the region
+        if(munmap(p->mmapvmas[i].addr, p->mmapvmas[i].length)!=0)
+            panic("exit: munmap failed");
+    }
+  }
+
   acquire(&wait_lock);
 
   // Give any children to init.
@@ -397,16 +410,19 @@ exit(int status)
 
   release(&wait_lock);
 
+  // ----------------- BUG -----------------
+  // Here process has already held its proc->lock.
+  // but we call munmap which may try to acquire proc->lock again.
   //unmap all mmapvmas
-  for (int i = 0; i < NMMAPVMA; i++)
-  {
-    if (p->mmapvmas[i].length != 0)
-    {
-        // unmap the region
-        if(munmap(p->mmapvmas[i].addr, p->mmapvmas[i].length)!=0)
-            panic("exit: munmap failed");
-    }
-  }
+//   for (int i = 0; i < NMMAPVMA; i++)
+//   {
+//     if (p->mmapvmas[i].length != 0)
+//     {
+//         // unmap the region
+//         if(munmap(p->mmapvmas[i].addr, p->mmapvmas[i].length)!=0)
+//             panic("exit: munmap failed");
+//     }
+//   }
   // Jump into the scheduler, never to return.
   sched();
   panic("zombie exit");
@@ -582,7 +598,6 @@ sleep(void *chan, struct spinlock *lk)
   // guaranteed that we won't miss any wakeup
   // (wakeup locks p->lock),
   // so it's okay to release lk.
-
   acquire(&p->lock);  //DOC: sleeplock1
   release(lk);
 

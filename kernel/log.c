@@ -147,7 +147,7 @@ void
 end_op(void)
 {
   int do_commit = 0;
-
+  
   acquire(&log.lock);
   log.outstanding -= 1;
   if(log.committing)
@@ -166,6 +166,7 @@ end_op(void)
   if(do_commit){
     // call commit w/o holding locks, since not allowed
     // to sleep with locks.
+
     commit();
     acquire(&log.lock);
     log.committing = 0;

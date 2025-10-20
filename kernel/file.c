@@ -187,9 +187,13 @@ int writePartialFile(struct file *f, uint64 addr, int n, int offset) {
     if (n <= 0)
         return 0;
     if(f->writable == 0)
+    {
+        printf("writePartialFile: file not writable\n");
         return -1;
+    }
 
     if (f->type != FD_INODE) {
+        printf("writePartialFile: not FD_INODE type\n");
         return -1;
     }
 
@@ -201,20 +205,20 @@ int writePartialFile(struct file *f, uint64 addr, int n, int offset) {
     // might be writing a device like the console.
     int max = ((MAXOPBLOCKS-1-1-2) / 2) * BSIZE;
     int i = 0;
+    
     while(i < n){
         int n1 = n - i;
         if(n1 > max)
             n1 = max;
-
         begin_op();
         ilock(f->ip);
         if ((r = writei(f->ip, 1, addr + i, offset, n1)) > 0)
             offset += r;
         iunlock(f->ip);
         end_op();
-
         if(r != n1){
             // error from writei
+            printf("Writei failed to write enough bytes\n");
             break;
         }
         i += r;

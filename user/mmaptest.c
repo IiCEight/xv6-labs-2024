@@ -321,14 +321,17 @@ fork_test(void)
     err("open (7)");
   if (unlink(f) == -1)
     err("unlink (3)");
+    //0x11000
   char *p1 = mmap(0, PGSIZE*2, PROT_READ, MAP_SHARED, fd, 0);
   if (p1 == MAP_FAILED)
     err("mmap (7)");
+    //0x13000
   char *p2 = mmap(0, PGSIZE*2, PROT_READ, MAP_SHARED, fd, 0);
   if (p2 == MAP_FAILED)
     err("mmap (8)");
 
   // read just 2nd page.
+  // 0x12000 page fault
   if(*(p1+PGSIZE) != 'A')
     err("fork mismatch (1)");
 

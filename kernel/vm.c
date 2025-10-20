@@ -471,7 +471,7 @@ uint64 findFreeVMA(pagetable_t pagetable, size_t sz, uint64 start) {
     uint64 szRounded = PGROUNDUP(sz);
     struct mmapvma *vmas = myproc()->mmapvmas;
     int found = 1;
-    for(startva = PGROUNDUP(start) + 10 * PGSIZE; startva < MAXVA; startva += PGSIZE)
+    for(startva = PGROUNDUP(start) + 100 * PGSIZE; startva < MAXVA; startva += PGSIZE)
     {
         found = 1;
         for(uint64 offset = 0; offset < szRounded; offset += PGSIZE)
