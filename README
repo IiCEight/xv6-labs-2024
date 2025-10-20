@@ -1,49 +1,1239 @@
-xv6 is a re-implementation of Dennis Ritchie's and Ken Thompson's Unix
-Version 6 (v6).  xv6 loosely follows the structure and style of v6,
-but is implemented for a modern RISC-V multiprocessor using ANSI C.
+# MIT6.S081
 
-ACKNOWLEDGMENTS
+## Lab: utilities
 
-xv6 is inspired by John Lions's Commentary on UNIX 6th Edition (Peer
-to Peer Communications; ISBN: 1-57398-013-7; 1st edition (June 14,
-2000)).  See also https://pdos.csail.mit.edu/6.1810/, which provides
-pointers to on-line resources for v6.
+### system call
 
-The following people have made contributions: Russ Cox (context switching,
-locking), Cliff Frey (MP), Xiao Yu (MP), Nickolai Zeldovich, and Austin
-Clements.
+#### pipe
 
-We are also grateful for the bug reports and patches contributed by
-Takahiro Aoyagi, Marcelo Arroyo, Silas Boyd-Wickizer, Anton Burtsev,
-carlclone, Ian Chen, Dan Cross, Cody Cutler, Mike CAT, Tej Chajed,
-Asami Doi,Wenyang Duan, eyalz800, Nelson Elhage, Saar Ettinger, Alice
-Ferrazzi, Nathaniel Filardo, flespark, Peter Froehlich, Yakir Goaron,
-Shivam Handa, Matt Harvey, Bryan Henry, jaichenhengjie, Jim Huang,
-Matúš Jókay, John Jolly, Alexander Kapshuk, Anders Kaseorg, kehao95,
-Wolfgang Keller, Jungwoo Kim, Jonathan Kimmitt, Eddie Kohler, Vadim
-Kolontsov, Austin Liew, l0stman, Pavan Maddamsetti, Imbar Marinescu,
-Yandong Mao, Matan Shabtay, Hitoshi Mitake, Carmi Merimovich, Mark
-Morrissey, mtasm, Joel Nider, Hayato Ohhashi, OptimisticSide,
-phosphagos, Harry Porter, Greg Price, RayAndrew, Jude Rich, segfault,
-Ayan Shafqat, Eldar Sehayek, Yongming Shen, Fumiya Shigemitsu, snoire,
-Taojie, Cam Tenny, tyfkda, Warren Toomey, Stephen Tu, Alissa Tung,
-Rafael Ubal, Amane Uehara, Pablo Ventura, Xi Wang, WaheedHafez,
-Keiichi Watanabe, Lucas Wolf, Nicolas Wolovick, wxdao, Grant Wu, x653,
-Jindong Zhang, Icenowy Zheng, ZhUyU1997, and Zou Chang Wei.
+`int pipe(int * pipefd)`: Note: `pipefd[0]` is read end and `pipefd[1]` is write end.
 
-The code in the files that constitute xv6 is
-Copyright 2006-2024 Frans Kaashoek, Robert Morris, and Russ Cox.
 
-ERROR REPORTS
 
-Please send errors and suggestions to Frans Kaashoek and Robert Morris
-(kaashoek,rtm@mit.edu).  The main purpose of xv6 is as a teaching
-operating system for MIT's 6.1810, so we are more interested in
-simplifications and clarifications than new features.
+#### dup
 
-BUILDING AND RUNNING XV6
+Duplicate a file descriptor.
 
-You will need a RISC-V "newlib" tool chain from
-https://github.com/riscv/riscv-gnu-toolchain, and qemu compiled for
-riscv64-softmmu.  Once they are installed, and in your shell
-search path, you can run "make qemu".
+
+
+## Lab: system calls
+
+### RISC-V assembly
+
+#### Registers
+
+RISC-V has **32 general-purpose registers**, each **64-bit (RV64)** or **32-bit (RV32)** depending on the system.
+
+| Register  | ABI Name | Usage                           |
+| --------- | -------- | ------------------------------- |
+| `x0`      | `zero`   | Always 0                        |
+| `x1`      | `ra`     | Return address                  |
+| `x2`      | `sp`     | Stack pointer                   |
+| `x5`      | `t0`     | Temporary                       |
+| `x10`     | `a0`     | Function arg 0 / return value   |
+| `x11`     | `a1`     | Function arg 1 / return value 2 |
+| `x12-x17` | `a2-a7`  | Function args                   |
+| `x28-x31` | `t3-t6`  | More temporaries                |
+
+
+
+#### Instructions
+
+**Arithmetic Instructions**
+
+```assembly
+# i stands for immediate
+addi a0, zero, 5    # a0 = 0 + 5
+addi a1, zero, 10   # a1 = 0 + 10
+add  a2, a0, a1     # a2 = a0 + a1 = 15
+sub  a3, a1, a0     # a3 = a1 - a0 = 5
+```
+
+
+
+**Memory Access**
+
+```assembly
+# Assume sp points to stack
+addi sp, sp, -16    # Allocate 16 bytes on stack i.e., sp = sp - 16
+# s, l, w stands for store, load, word respectively.
+sw   a0, 0(sp)      # Store a0 at memory[sp] 
+sw   a1, 4(sp)      # Store a1 at memory[sp+4]
+
+lw   t0, 0(sp)      # Load memory[sp] into t0
+lw   t1, 4(sp)      # Load memory[sp+4] into t1
+
+
+# li stands for Load Immediate
+li a0, 42       # a0 = 42
+
+# Loads the address of a label or global symbol into a register.
+# la rd, symbol
+la sp, stack0    # sp = address of stack0
+```
+
+
+
+**Branching and Control Flow**
+
+```assembly
+addi a0, zero, 5
+addi a1, zero, 5
+
+# beq stands for branch equal
+beq a0, a1, equal   # if (a0 == a1) jump to label "equal"
+
+# bne stands for branch not equal
+bne a0, a1, noteq   # if (a0 != a1) jump
+
+# bne stands for branch less than
+blt a0, a1, less    # if (a0 < a1) jump
+
+# j is used for an unconditinal jump.
+equal:
+    addi a2, zero, 1   # a2 = 1
+    j end
+
+noteq:
+    addi a2, zero, 2   # a2 = 2
+    j end
+
+less:
+    addi a2, zero, 3   # a2 = 3
+
+end:
+```
+
+
+
+**CSR**
+
+In RISC-V, **CSRs** are special-purpose **registers** inside the CPU.
+
+They control and report on things like:
+
+- privilege levels (Machine, Supervisor, User)
+
+- interrupt enable/disable
+
+- exception causes
+
+- performance counters
+
+- etc.
+
+```assembly
+csrr rd, csr # read from a CSR into a general-purpose register.
+csrw csr, rs # write a value from a register into a CSR.
+
+csrr a0, mstatus   # read mstatus into a0
+csrw mstatus, a1   # write value of a1 into mstatus
+```
+
+Commom CSRs:
+
+- `mstatus`: **Machine Status Register**, holds the machine’s status bits (interrupt enable, privilege level, etc.).
+- `satp`: **Supervisor Address Translation and Protection**, This register store the **physical page number of  page table**. OS find current page table according this.
+- `sie`: **Supervisor Interrupt Enable Register**.
+- `mpec` :  **machine exception program counter**, **holds the instruction address** to which a return from exception will go.
+- `sepc`: **Supervisor Exception Program Counter**. When a trap is taken into S-mode, sepc is written with the virtual address of the instruction that was interrupted or that encountered the exception.
+- `stvec`: **Supervisor Trap Vector Base Address Register**.  All traps into supervisor mode cause the pc to be set to the address in the BASE field.
+
+
+
+### Sytem call Process (Rough understanding)
+
+When call system call like `exec(argc, argv);` in user program,  program will jump to a global symbol ` .global exec` in `usys.S`  which is generated by `usys.pl`. 
+
+```assembly
+.global exec
+exec:
+ li a7, SYS_exec
+ ecall
+ ret
+```
+
+This is assemble implementation of such system call function.
+
+It stores a number `SYS_exec` to register `a7`. `SYS_exec` is a Micro definition in `syscall.h`.
+
+Then `ecall` traps into S-mode.  **Hardware** 
+
+- Sets the **`sepc`** CSR (Supervisor Exception Program Counter) to the address of the **trapped instruction** (the instruction that caused the trap).
+
+- Sets **`scause`** to indicate the trap cause.
+- Optionally sets **`stval`** for extra info (like a faulting virtual address).
+- Switches privilege to **S-mode** and jumps to the **trap vector** set in **`stvec`**.
+
+When trap into S-mode happens, `pc` will to set to `stvec` which is `uservec` in `trampoline.S`.
+
+It will store current status into `p->trapframe` memory area which is owned by each process. And then jump to `usertrap(void)` in `trap.c`
+
+Now after some if, `usertrap(void)` will call `syscall(void)` in `syscall.c`.
+
+That is where really implementation of system call function in.
+
+**See source code for more details.**
+
+**See lab: traps for deep understanding.**
+
+
+
+## Lab: page tables
+
+### Kernel address space
+
+**See xv6 book at page 34 for kernel memory layout.**
+
+- First call `kinit()` in `main.c` . It call `freerange()` to collect a free physical memory from `end` to `PHYSTOP`. **It's using a linked list to manage free space.**
+- Then call `kvminit()` in `main.c`. It create a kernel page table and set virtual memory mapping.
+- `kvminithart()` set CSR `satp` to such kernel page table and clean up TLB. **Now page mechanism turns on.**
+
+
+
+### Process address space
+
+**See xv6 book at page 39 for user address space layout.**
+
+Each process has its own page table, and when xv6 switches between processes, it also changes page tables (**and must clean up TLB**).
+
+**The stack is a single page.**
+
+A process’s user memory **starts at virtual address zero** and can grow up to MAXVA (kernel/riscv.h:375).
+
+
+
+
+
+### ELF file
+
+Using objdump we can check the file type and its details.
+
+e.g.:
+
+```sh
+saber@Saber:~/xv6-labs-2024$ objdump -p user/_init
+
+user/_init:     file format elf64-little
+
+Program Header:
+0x70000003 off    0x00000000000075ac vaddr 0x0000000000000000 paddr 0x0000000000000000 align 2**0
+         filesz 0x0000000000000053 memsz 0x0000000000000000 flags r--
+    
+    LOAD off    0x0000000000001000 vaddr 0x0000000000000000 paddr 0x0000000000000000 align 2**12
+         filesz 0x0000000000000d74 memsz 0x0000000000000d74 flags r-x
+    
+    LOAD off    0x0000000000002000 vaddr 0x0000000000001000 paddr 0x0000000000001000 align 2**12
+         filesz 0x0000000000000010 memsz 0x0000000000000030 flags rw-
+   
+   STACK off    0x0000000000000000 vaddr 0x0000000000000000 paddr 0x0000000000000000 align 2**4
+         filesz 0x0000000000000000 memsz 0x0000000000000000 flags rw-
+```
+
+
+
+>Program Header:
+>0x70000003 off    0x00000000000075ac vaddr 0x0000000000000000 paddr 0x0000000000000000 align 2**0
+>filesz 0x0000000000000053 memsz 0x0000000000000000 flags r--
+
+This is a **special header** (type `0x70000003`, which is OS/ABI specific, not a normal `LOAD`).
+
+- It starts at file offset `0x75ac`.
+- It doesn’t actually get mapped into memory (`memsz = 0`).
+- Just contains metadata, like **ELF interpreter info** or **note sections**.
+
+
+
+> LOAD off    0x0000000000001000 vaddr 0x0000000000000000 paddr 0x0000000000000000 align 2**12
+>       filesz 0x0000000000000d74 memsz 0x0000000000000d74 flags r-x
+
+- **Type**: `LOAD` → means loader must map this part of the file into memory.
+- **off 0x1000**: in the ELF file, code starts at offset 0x1000.
+- **vaddr 0x0**: mapped into user virtual address 0x0 (first page of process).
+- **filesz = memsz = 0x0d74 (≈ 3444 bytes)** → so this is the program **code (.text)**.
+- **flags r-x** → Read + eXecute (but not write).
+
+So this is the **text segment** since it is executable.
+
+
+
+>LOAD off    0x0000000000002000 vaddr 0x0000000000001000 paddr 0x0000000000001000 align 2**12
+>filesz 0x0000000000000010 memsz 0x0000000000000030 flags rw-
+
+- Another `LOAD` segment.
+- **off 0x2000** → comes from file offset 0x2000.
+- **vaddr 0x1000** → mapped into virtual memory at 0x1000 (right after text).
+- **filesz = 0x10 (16 bytes)** → this is `.data`.
+- **memsz = 0x30 (48 bytes)** → this is `.data + .bss` (uninitialized globals).
+- **flags rw-** → Read + Write (not executable).
+
+So this is the **data segment**.
+
+**NOTE**:
+
+A program section header’s `filesz` may be less than the `memsz`, indicating that the gap between them should be filled with zeroes (for C global variables) rather than read from the file (**.bss**).
+
+For `/init`, the data filesz is 0x10 bytes and memsz is 0x30 bytes, and thus uvmalloc allocates enough physical memory to hold 0x30 bytes, but reads only 0x10 bytes from the file `/init`.
+
+
+
+> STACK off    0x0000000000000000 vaddr 0x0000000000000000 ...
+>       filesz 0x0 memsz 0x0 flags rw-
+
+This is just an ELF hint (for some OSes) saying "create a stack".
+
+- xv6 ignores this and instead allocates its own stack when `exec()` runs.
+
+
+
+**paddr** tells the loader where in physical memory to put this segment. This will be ignored since virtual memory is enabled.;
+
+`align 2**12`: That means alignment = **4096 bytes = 1 page**.
+
+
+
+### exec() (Awesome !!)
+
+**See xv6-book at page 40 for more details.**
+
+**This is really awesome! Congratulations!!**
+
+
+
+
+
+### lab: Inspect a user-process page table
+
+```
+va 0x0 pte 0x21FC905B pa 0x87F24000 perm 0x5B
+va 0x1000 pte 0x21FD141B pa 0x87F45000 perm 0x1B
+va 0x2000 pte 0x21FD1017 pa 0x87F44000 perm 0x17
+va 0x3000 pte 0x21FD4407 pa 0x87F51000 perm 0x7
+va 0x4000 pte 0x21FC80D7 pa 0x87F20000 perm 0xD7
+va 0x5000 pte 0x0 pa 0x0 perm 0x0
+va 0x6000 pte 0x0 pa 0x0 perm 0x0
+va 0x7000 pte 0x0 pa 0x0 perm 0x0
+va 0x8000 pte 0x0 pa 0x0 perm 0x0
+va 0x9000 pte 0x0 pa 0x0 perm 0x0
+va 0xFFFF6000 pte 0x0 pa 0x0 perm 0x0
+va 0xFFFF7000 pte 0x0 pa 0x0 perm 0x0
+va 0xFFFF8000 pte 0x0 pa 0x0 perm 0x0
+va 0xFFFF9000 pte 0x0 pa 0x0 perm 0x0
+va 0xFFFFA000 pte 0x0 pa 0x0 perm 0x0
+va 0xFFFFB000 pte 0x0 pa 0x0 perm 0x0
+va 0xFFFFC000 pte 0x0 pa 0x0 perm 0x0
+va 0xFFFFD000 pte 0x0 pa 0x0 perm 0x0
+va 0xFFFFE000 pte 0x21FD48C7 pa 0x87F52000 perm 0xC7
+va 0xFFFFF000 pte 0x2000184B pa 0x80006000 perm 0x4B
+print_pgtbl: OK
+```
+
+First two pages are code setion.
+
+Third page is data setion.
+
+Fourth page is used for stack guard page.
+
+Fifth page is used for stack.
+
+The the second to last page is `TRAPFRAME` code.
+
+Last page is `TRAMPOLINE` code.
+
+
+
+
+
+### Sv39
+
+**Sv39: Page-Based 39-bit Virtual-Memory System.**
+
+
+
+
+
+## Lab: traps
+
+There are three kinds of event which cause the CPU to set aside ordinary execution of instructions
+
+and force a transfer of control to special code that handles the event.
+
+- **system call**
+- **exception**: an instruction (user or kernel) does something illegal, such as divide by zero or use an invalid virtual address.
+- device **interrupt**:  a device signals that it needs attention.
+
+This book uses **trap** as a generic term for these situations.
+
+**See xv6 book at chaper four for full description.**
+
+
+
+### RISC-V trap machinery
+
+Here’s an outline of the most important registers:
+
+- `stvec`: The kernel writes the address of its trap handler here; the RISC-V jumps to the address in `stvec` to handle a trap.
+- `sepc`: When a trap occurs, **RISC-V saves the program counter here** (since the `pc` is then overwritten with the value in `stvec`). **The `sret` (return from trap) instruction copies `sepc` to the `pc`**. The kernel can write `sepc` to control where `sret` goes.
+- `scause`: RISC-V puts a number here that describes the reason for the trap.
+- `sscratch`: The trap handler code uses `sscratch` to help it avoid overwriting user registers before saving them.
+- `sstatus`: The `SIE` bit in `sstatus` controls whether device interrupts are enabled. If the kernel clears `SIE`, the RISC-V will defer device interrupts until the kernel sets `SIE`. The `SPP` bit indicates whether a trap came from user mode or supervisor mode, and controls to what mode `sret` returns.
+
+
+
+When it needs to force a trap, the RISC-V hardware does the following for all trap types:
+
+1. If the trap is a device interrupt, and the sstatus SIE bit is clear, don’t do any of the following.
+2. Disable interrupts by clearing the `SIE` bit in sstatus.
+3. Copy the `pc` to `sepc`.
+4. Save the current mode (user or supervisor) in the `SPP` bit in `sstatus`.
+5. Set `scause` to reflect the trap’s cause.
+6. Set the mode to supervisor.
+7. Copy `stvec` to the `pc`.
+8. Start executing at the new `pc`.
+
+
+
+**Note that the CPU doesn’t switch to the kernel page table, doesn’t switch to a stack in the kernel, and doesn’t save any registers other than the `pc`.**
+
+**Kernel software must perform these tasks.**
+
+
+
+### function pointer
+
+The function name in C is a pointer to the address of such function.
+
+We can define a function pointer like this.
+
+```c++
+#include <stdio.h>
+
+int add(int a, int b) {
+    return a + b;
+}
+
+int main() {
+    // Function name 'add' can be used like a pointer to the function
+    // Define a variable that can point to a function taking (int,int) and returning int
+    int (*fp)(int, int) = add;   // same as &add
+
+    printf("%p\n", add);   // print the address of the function
+    printf("%p\n", &add);  // also works (identical)
+    printf("%d\n", fp(2, 3)); // call through pointer
+}
+```
+
+
+
+### CPU clock ticks
+
+#### The hardware: timer interrupts
+
+On RISC-V, there is a **CLINT** (Core Local Interruptor) device that maintains:
+
+- `mtime`: a continuously incrementing 64-bit counter (in cycles).
+- `mtimecmp`: a register that, when `mtime >= mtimecmp`, triggers a **timer interrupt**.
+
+So, to get regular ticks, xv6 sets `mtimecmp = mtime + interval`.
+
+
+
+#### xv6 boot
+
+In `kernel/start.c`, xv6 boots and eventually sets up the timer:
+
+- Each hart (CPU) calls `timerinit()` (in `kernel/start.c`), which programs the timer:
+
+  ```c
+  // ask each hart to generate timer interrupts.
+  void
+  timerinit()
+  {
+    // enable supervisor-mode timer interrupts.
+    w_mie(r_mie() | MIE_STIE);
+    
+    // enable the sstc extension (i.e. stimecmp).
+    // With Sstc, the supervisor can directly write to the stimecmp
+    // register instead of going through machine mode and CLINT.
+    w_menvcfg(r_menvcfg() | (1L << 63)); 
+    
+    // allow supervisor to use stimecmp and time.
+    w_mcounteren(r_mcounteren() | 2);
+    
+    // ask for the very first timer interrupt.
+    // when time >= timecmp a interrupt occurs.
+    w_stimecmp(r_time() + 1000000);
+  }
+  ```
+
+- then `trap.c` will handle this and update `timecmp` for next timer interrupt.
+
+  ```c
+  void
+  clockintr()
+  {
+    // Only CPU 0 is the one responsible for maintaining global time
+    // Otherwise, every core would increment ticks, and time would advance too fast.
+    // So different CPU can be synchronous with this global time.
+    if(cpuid() == 0){
+      acquire(&tickslock);
+      ticks++;
+      wakeup(&ticks);
+      release(&tickslock);
+    }
+  
+    // ask for the next timer interrupt. this also clears
+    // the interrupt request. 1000000 is about a tenth
+    // of a second.
+    w_stimecmp(r_time() + 1000000);
+  }
+  ```
+
+  
+
+### extern 
+
+NOTE: a **global variable can be seen in other files**, but you need to declare  it with `extern` in other files. Without `extern`, if you just write `int globalVar;` in another file, the compiler will think you’re defining a new variable, which can cause linking errors or multiple definitions
+
+```c
+// File1.c
+int globalVar = 42; // definition
+```
+
+
+
+```c
+// File2.c
+#include <stdio.h>
+
+extern int globalVar;  // declaration 
+
+int main() {
+    printf("%d\n", globalVar); // can access the variable from File1.c
+    return 0;
+}
+```
+
+```sh
+gcc file1.c file2.c -o hello.c
+```
+
+
+
+## Lab: Copy-on-Write Fork for xv6 (hard)
+
+**This lab is hard since it is easy to get wrong.**
+
+Here I meet **FIVE** bugs when I complete my code first time.
+
+```c
+void
+kfree(void *pa)
+{
+  struct run *r;
+
+  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
+    panic("kfree");
+
+    /********** bug 1: here *************/
+  // Fill with junk to catch dangling refs.
+  // Shit this bug take me about 2 hours.
+  // I forget to handle this and cause
+  // clear all pages whoever they are.
+ /*  memset(pa, 0, PGSIZE); */
+
+  r = (struct run*)pa;
+  int index = MEMINDEX(r);
+
+  acquire(&kmem.lock);
+  acquire(&refcountlock);
+
+  if(kmem.refcount != 0)
+  {
+    /********** bug 3: here *************/
+    // NOTE: If refcount is unsigned and = 0.
+    // Then kmem.refcount[index]--. It will
+    // underflow to 65535.
+    kmem.refcount[index]--;
+    if(kmem.refcount[index] == 0)
+    {
+         /********** bug 2: here *************/
+        // NOTE!!!!!!!!
+        // Order is important here.
+        // clear must before r->next = kmem.freelist;
+        // Or r->next will be 0;
+        memset(pa, 0, PGSIZE);
+        r->next = kmem.freelist;
+        kmem.freelist = r;
+    }
+    // printf("kfree address %lx, index %d, refcount %d\n", (uint64)r, index, kmem.refcount[index]);
+  }
+  else
+  {
+    memset(pa, 0, PGSIZE);
+    r->next = kmem.freelist;
+    kmem.freelist = r;
+  }
+  release(&refcountlock);
+  release(&kmem.lock);
+}
+```
+
+### 1.Clear all pages whoever they are
+
+Whne I modify `kfree`. I forget to move `memset(pa, 0, PGSIZE);` to proper place.
+
+
+
+### 2.Place memset(pa, 0, PGSIZE); to wrong place
+
+```c
+//  This it wrong
+    r->next = kmem.freelist;
+    kmem.freelist = r;
+    memset(pa, 0, PGSIZE);
+```
+
+`memset` must before `r->next = kmem.freelist`, or `r->next` will be `0`.
+
+**This is a really subtle BUG.**
+
+
+
+### 3.Unsigned short underflow
+
+If  ` kmem.refcount[index];` is not initialized correctly and do `    kmem.refcount[index]--;`.
+
+It will underflow to 65535 if `kmem.refcount[index] == 0`.
+
+So I must maintain `kmem.refcount` carefully for every time.
+
+
+
+### 4.Set every page as PTE_SW
+
+```c
+int
+uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
+{
+  pte_t *pte;
+  uint64 pa, i;
+  uint flags;
+//   char *mem;
+
+  for(i = 0; i < sz; i += PGSIZE){
+    if((pte = walk(old, i, 0)) == 0)
+      panic("uvmcopy: pte should exist");
+    if((*pte & PTE_V) == 0)
+      panic("uvmcopy: page not present");
+    pa = PTE2PA(*pte);
+    /*************** bug 4: Here ******************/
+    // Clear PTE_W for both parent and child
+    // NOTE: We need to identify the page as writable
+    // by using a bit (PTE_SW).
+    if ((*pte) & PTE_W)
+    {
+        *pte &= (~PTE_W);
+        *pte |= PTE_SW;
+        if((*pte) & PTE_W)
+            panic("uvmcopy: PTE_W not cleared!");
+    }
+
+    flags = PTE_FLAGS(*pte);
+    // We share the physical memory.
+    // if((mem = kalloc()) == 0)
+    //   goto err;
+    // memmove(mem, (char*)pa, PGSIZE);
+
+    
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
+        //   kfree(mem);
+        goto err;
+    }
+    kincresememrefcount(pa);
+  }
+  return 0;
+
+ err:
+  uvmunmap(new, 0, i / PGSIZE, 1);
+  return -1;
+}
+```
+
+When orignal page is wriable, I can clear `PTE_W` and set `PTE_SW`.
+
+**The `if ((*pte) & PTE_W)` check is necessary.**
+
+I noticed this condition when I first code. However I delete it when I see other's code which marks all page as `PTE_SW`. **What a pity!!!**
+
+
+
+### 5.Ignore load page fault
+
+```c
+    /*************** bug 5: Here ******************/
+  // BUG FOUND: Load page fault is need handle too.
+    else if (r_scause() == 15 || r_scause() == 13) // page fault and load page fault
+    {
+        // printf("page fault begin....\n");
+        uint64 va = r_stval(); // the faulting address.
+        // printf("page fault va = 0x%lx\n", va);
+        if(pagefaultcheck(p->pagetable, va) == 0)
+        {
+            printf("pagefaultcheck: failed\n");
+            setkilled(p);
+        }
+        else
+        {
+		...
+		}
+	}...
+```
+
+I don't consider `r_scause() == 13`. And because of that, `sbrkfail()` test will fail.
+
+
+
+## Lab: networking
+
+### UART
+
+**UART** = **Universal Asynchronous Receiver/Transmitter**.
+
+UART’s job is **only**:
+
+- Take a byte from the CPU → serialize it (add start/stop bits) → send it out on the TX line.
+- Take serial bits from the RX line → reassemble them into a byte → give it to the CPU.
+
+Think of UART as a **mailman**, **It is only responsible for sending or receive data to or from the external device!!!** These devices do real work like draw pixels on screen, reads/writes blocks on disk, etc.
+
+
+
+### UART overall process
+
+#### 1. What is the UART here?
+
+xv6 runs on a RISC‑V platform that exposes a 16550a‑compatible UART (Universal Asynchronous Receiver/Transmitter) at a fixed physical MMIO base address `UART0` (defined in `memlayout.h`). The UART is a tiny piece of hardware that converts between:
+
+- Parallel CPU loads/stores (to its memory-mapped registers)
+- A serial bitstream on TX/RX pins (e.g., to your host terminal via QEMU)
+
+You interact with it by reading/writing a handful of byte-sized registers:
+
+- RHR (Receive Holding Register, read) – holds one received byte (if any)
+- THR (Transmit Holding Register, write) – write a byte to send
+- IER (Interrupt Enable Register) – enable RX/TX interrupts
+- FCR (FIFO Control Register) – enable/clear FIFOs
+- LCR (Line Control Register) – sets word length, parity, and enables baud latch mode
+- LSR (Line Status Register) – indicates RX ready, TX idle, etc.
+- ISR (Interrupt Status Register) – reading can acknowledge interrupt source (in this driver it's just read-and-discard to quench)
+
+The code hides these with `Reg(reg)`, `ReadReg`, and `WriteReg`.
+
+#### 2. Initialization (`uartinit()`)
+
+Steps:
+
+1. Disable interrupts: `IER = 0`.
+2. Enter baud latch mode: set `LCR_BAUD_LATCH`.
+3. Program divisor (LSB at register 0, MSB at 1) for 38.4K baud.
+4. Leave latch mode and set 8N1 framing: `LCR = LCR_EIGHT_BITS`.
+5. Enable and clear FIFOs: `FCR = FIFO_ENABLE | FIFO_CLEAR`.
+6. Enable TX and RX interrupts: `IER = IER_TX_ENABLE | IER_RX_ENABLE`.
+7. Initialize a spinlock guarding the transmit ring buffer.
+
+After this, the UART can:
+
+- Raise an interrupt when a byte arrives
+- Raise an interrupt when it’s ready to accept another transmit byte (THR empty)
+
+#### 3. Transmit Path (kernel -> UART -> terminal)
+
+There are two ways the kernel outputs characters:
+
+##### 3.1 Slow but synchronous: `uartputc_sync()`
+
+Used by `printf()` early or in panic contexts:
+
+- Disables interrupts on the local CPU (`push_off()`).
+- Polls `LSR_TX_IDLE` until THR is free.
+- Writes the byte directly to `THR`.
+- Re-enables interrupts (`pop_off()`). Pros: Simple, no dependence on interrupts.
+  Cons: Busy-waits; blocks CPU.
+
+##### 3.2 Buffered + interrupt-driven: `uartputc()`
+
+Used by normal console writes: Flow:
+
+1. Acquire `uart_tx_lock`.
+
+2. If panicked, spin forever (avoid returning into a broken kernel).
+
+3. If transmit ring buffer is full (
+
+   ```
+   uart_tx_w == uart_tx_r + UART_TX_BUF_SIZE
+   ```
+
+   ), sleep:
+
+   - `sleep(&uart_tx_r, &uart_tx_lock);` atomically releases the lock and parks the process.
+   - It will be woken when space opens (see `uartstart()`).
+
+4. Place the character into `uart_tx_buf[uart_tx_w % SIZE]`, increment `uart_tx_w`.
+
+5. Call `uartstart()` to push bytes into hardware if possible.
+
+6. Release lock.
+
+##### 3.3 Actually handing bytes to hardware: `uartstart()`
+
+Called:
+
+- From `uartputc()` (top half)
+
+- From `uartintr()` (bottom half, after TX interrupt) Algorithm:
+
+- While there are unsent bytes (w != r) and hardware indicates THR empty (
+
+  ```
+  LSR_TX_IDLE
+  ```
+
+  ):
+
+  - Take next byte from ring buffer
+  - Advance `uart_tx_r`
+  - `wakeup(&uart_tx_r)` to unblock any sleepers in `uartputc()`
+  - Write byte to `THR`
+
+- If buffer empty, read `ISR` (ack/clear) and return. It stops when hardware is full or ring buffer is empty.
+
+##### 3.4 Interrupt cycle for transmit
+
+1. Hardware finishes shifting out a character.
+2. Sets LSR_TX_IDLE and raises a TX interrupt (because IER_TX_ENABLE set).
+3. Trap handler -> `devintr()` -> `uartintr()`.
+4. `uartintr()` acquires the lock, calls `uartstart()` to feed more bytes, releases lock.
+5. Sleeping writers get woken as the ring drains.
+
+#### 4. Receive Path (terminal -> UART -> kernel -> user process)
+
+Data entry path:
+
+1. A character arrives electrically; UART shifts bits and assembles a byte in RHR, sets `LSR_RX_READY`, raises RX interrupt (IER_RX_ENABLE).
+2. Trap -> `devintr()` -> `uartintr()`.
+3. In `uartintr()`, first loop calls `uartgetc()` repeatedly:
+   - `uartgetc()` checks `LSR_RX_READY` and returns the byte or -1 if none.
+4. For each received byte `c`, `uartintr()` calls `consoleintr(c)`.
+
+`consoleintr()` (in `console.c`) does line discipline:
+
+- Handles backspace/delete editing
+- Implements special control chars (e.g., Ctrl-P, Ctrl-U, newline)
+- Stores characters into a circular input buffer
+- Wakes processes sleeping in `consoleread()` (which services user `read()` on stdin)
+
+Ultimately:
+
+- User process calls `read(fd=0, buf, n)`
+- System call `sys_read` -> `fileread` -> device switch entry for console -> `consoleread`
+- If no complete line (or no data, depending on policy), process sleeps on input buffer
+- When characters (or a newline) arrive, `consoleread` copies them to user buffer and returns.
+
+### DMA
+
+Refer to xv6 book **5.5 Real world** for DMA method.
+
+
+
+
+
+### PCI
+
+PCI/PCI-X/PCIe are **bus standards**.
+
+- Devices (NICs, GPUs, etc.) sit on this bus.
+- The CPU can access them through:
+  - **I/O ports (legacy)** or
+  - **Memory-mapped I/O (MMIO, the usual way today)**.
+
+So interacting with PCI = **reading/writing special registers on the bus**.
+
+
+
+#### PCI Configuration Space
+
+Every PCI device exposes a **configuration space** (256 or 4096 bytes).
+
+The OS can read/write this to:
+
+- Discover what devices exist.
+- Get their **Vendor ID** (Intel, Broadcom, etc.) and **Device ID** (82540EM, etc.).
+- Learn the device’s **capabilities**.
+- Find the **BARs (Base Address Registers)**, which tell the OS where the device’s MMIO registers live in physical memory.
+
+
+
+So at boot, the OS:
+
+1. Scans the PCI bus (through config space).
+2. For each device, checks Vendor/Device ID.
+3. If it finds a supported device (like Intel 82540EM), it loads the corresponding driver.
+
+See `pic_init()` in `pic.c`.
+
+```c
+void
+pci_init()
+{
+  // we'll place the e1000 registers at this address.
+  // vm.c maps this range.
+  uint64 e1000_regs = 0x40000000L;
+
+  // qemu -machine virt puts PCIe config space here.
+  // vm.c maps this range.
+  uint32  *ecam = (uint32 *) 0x30000000L;
+  
+  // look at each possible PCI device on bus 0.
+  for(int dev = 0; dev < 32; dev++){
+    int bus = 0;
+    int func = 0;
+    int offset = 0;
+    uint32 off = (bus << 16) | (dev << 11) | (func << 8) | (offset);
+    volatile uint32 *base = ecam + off;
+    uint32 id = base[0];
+    
+    // 100e:8086 is an e1000
+    if(id == 0x100e8086){
+      // command and status register.
+      // bit 0 : I/O access enable
+      // bit 1 : memory access enable
+      // bit 2 : enable mastering
+      base[1] = 7;
+      __sync_synchronize();
+
+      for(int i = 0; i < 6; i++){
+        uint32 old = base[4+i];
+
+        // writing all 1's to the BAR causes it to be
+        // replaced with its size.
+        base[4+i] = 0xffffffff;
+        __sync_synchronize();
+
+        base[4+i] = old;
+      }
+
+      // tell the e1000 to reveal its registers at
+      // physical address 0x40000000.
+      base[4+0] = e1000_regs;
+
+      e1000_init((uint32*)e1000_regs);
+    }
+  }
+}
+```
+
+
+
+### E1000
+
+#### Receive
+
+E1000 maintain a **circular queue** for receiving Ethenet packet.
+
+Each element of queue is a structure which called **descriptor**.
+
+```c
+struct rx_desc
+{
+  uint64 addr;       /* Address of the descriptor's data buffer */
+  uint16 length;     /* Length of data DMAed into data buffer */
+  uint16 csum;       /* Packet checksum */
+  uint8 status;      /* Descriptor status [E1000 3.2.3.1] */ 
+  uint8 errors;      /* Descriptor Errors [E1000 3.2.3.2] */
+  uint16 special;    /* Descriptor special [E1000 3.2.3.3] */
+};
+
+```
+
+And we can access the received data according `addr` field in descriptor.
+
+The max length of  data buffer of one descriptor is set by `e1000_init`
+
+```c
+  regs[E1000_RCTL] = E1000_RCTL_EN | // enable receiver
+    E1000_RCTL_BAM |                 // enable broadcast
+    E1000_RCTL_SZ_2048 |             // 2048-byte rx buffers
+    E1000_RCTL_SECRC;                // strip CRC
+```
+
+**Now it is 2048 byte.**
+
+For receive circular queue, it have head and tail registers `regs[E1000_RDT]` and `regs[E1000_RDH]`.
+
+
+
+**Hardware  behavior:**
+
+Every time, when hardware try to write receive packets into main memory at receive circular queue,
+
+it will write to the queue head, and place data to `addr` field in head descriptor. Then move head to next one (head plus one). Now this descriptor referred before is ready to process by OS and its `descriptor->status & `  bit will be set 1.
+
+All space from head to tail  belongs to hardware to write.
+
+
+
+
+
+**OS  behavior:**
+
+All space from **tail + 1** to head belongs to OS to read (**continuous**).
+
+Every time, begin to read tail + 1 descriptor and check its `E1000_RXD_STAT_DD` bit. Handle it and plus tail, then keep doing until `E1000_RXD_STAT_DD == 0` .
+
+
+
+#### Transmit
+
+Transmit is similar as receive. There is a transmit circular queue and corresponding transmit descriptor.
+
+But head and tail are different.
+
+**Every time we write data into descriptor begin to tail not tail + 1.**
+
+This because queue initialization. When transmitting, `head = tail = 0`, but in receiving, `head = 0, tail = queue_size - 1`.
+
+
+
+#### **NOTE：**
+
+We don't use`head > tail` or `tail > head` or something like this to check when to stop reading or writing. Instead we use  status bit `E1000_RXD_STAT_DD` to check if it is ready for OS to handle. **So we only need to know where to begin since the `E1000_RXD_STAT_DD` will be continuous the same! (One continuous part will be 0 and remained continuous part is 1)** 
+
+
+
+## Lab: Locks
+
+**In xv6 when one CPU hold at least one lock, it will not be allowed interruptions.**
+
+See Locks and interrupt handlers for more details in xv6 book.
+
+
+
+### __sync_synchronize()
+
+Modern CPUs and compilers **reorder instructions** to optimize performance.
+
+`__sync_synchronize()` is a **memory barrier (or memory fence)**.
+ It tells both **the CPU and the compiler**:
+
+> “Don’t reorder any memory operations (reads/writes) across this point.”
+
+In other words, all loads and stores before it are completed **before** anything after it begins.
+
+
+
+### Sleep locks
+
+See **6.8 Sleep locks** in xv6 book.
+
+Because sleep-locks leave interrupts enabled, they cannot be used in interrupt handlers. Because `acquiresleep `may yield the CPU, sleep-locks cannot be used inside spinlock critical sections (though spinlocks can be used inside sleep-lock critical sections).
+
+
+
+
+
+## Lab: file system
+
+This is a little complex. Since there a a lot of data structures and locks.
+
+File system implementation.  Five layers:
+
++ Blocks: allocator for raw disk blocks.
+
++ Log: crash recovery for multi-step updates.
+
++ Files: inode allocator, reading, writing, metadata.
+
++ Directories: inode with special contents (list of other inodes!)
+
++ Names: paths like `/usr/rtm/xv6/fs.c` for convenient naming.
+
+### Hardware interface
+
+`virtio_disk_rw()` in `virtio_disk.c` is  hardware interface to read/write a block to disk.
+
+**Using this we can have ability of reading or writing a block in disk.**
+
+
+
+### Buffer cache layer(Blocks)
+
+When we want to operate on blocks in disk, we first need to load it into main memory. Thus we need a data structure to manage these blocks in memory.
+
+We call this data structure **buffer cache**. 
+
+```c
+struct {
+  struct spinlock lock;
+  struct buf buf[NBUF];
+
+  // Linked list of all buffers, through prev/next.
+  // Sorted by how recently the buffer was used.
+  // head.next is most recent, head.prev is least.
+  struct buf head;
+} bcache;
+```
+
+It is a **double linked list**, each element is called `buf` with a block in it.
+
+```c
+struct buf {
+  int valid;   // has data been read from disk?
+  int disk;    // does disk "own" buf?
+  uint dev;
+  uint blockno;
+  struct sleeplock lock;
+  uint refcnt;
+  struct buf *prev; // LRU cache list
+  struct buf *next;
+  uchar data[BSIZE];
+};
+```
+
+When we try to find a block we need to search in this `bache` list. Thus we need to first get the lock in `bcache`. After find the correct `buf`, we need acquire the `sleeplock` in `buf` before we access the data in that `buf`. **NOTE: we need first release lock in `bache` since when process sleep, it can't hold spin lock.**
+
+We use `refcnt` in `buf` to indicate reference number of such block in memory. When it reduces to zero, it will be reused or mapped by other block in disk if need.
+
+
+
+### Log layer
+
+`begin_op()` and `end_op()` are used to open a transaction in operating disk.
+
+In the internal of them, use `log_write()` to log these write operations and `end_op()` will commit these operations.
+
+```c
+begin_op()
+...
+log_write(blockA)
+...
+log_write(blockB)
+...
+end_op()
+```
+
+
+
+### Inode (file) layer
+
+We use a `inode` to store a file structure.
+
+```c
+// in-memory copy of an inode
+struct inode {
+  uint dev;           // Device number
+  uint inum;          // Inode number
+  int ref;            // Reference count
+  struct sleeplock lock; // protects everything below here
+  int valid;          // inode has been read from disk?
+
+  short type;         // copy of disk inode
+  short major;
+  short minor;
+  short nlink;
+  uint size;
+  uint addrs[NDIRECT+2];
+};
+```
+
+`Inode` is a data in disk, we need copy it into memory and use a data structure to manage it.
+
+```c
+struct {
+  struct spinlock lock;
+  struct inode inode[NINODE];
+} itable;
+```
+
+Like buffer cache, when we want to get a `inode` we first need hold lock in `itable` to find it. Then release it and get lock in `inode` to access the data.
+
+There is also reference number of a `inode` i.e. `ref`. Every time we need access `inode` we need increase it. After using, we should use `iput()` to decrease reference.
+
+
+
+### Directory layer
+
+A directory is implemented internally much like a file. Its `inode` has type `T_DIR` and its data is a sequence of directory entries. Each entry is a `struct dirent` (kernel/fs.h:56), which contains a name and an inode number.
+
+See book xv6 **8.11** for more information.
+
+
+
+### File descriptor layer
+
+Xv6 gives each process its own table of open files, or file descriptors, as we saw in Chapter 1. Each open file is represented by a struct file (kernel/file.h:1), which is a wrapper around either an `inode` or a `pipe`, plus an I/O offset.
+
+All the open files in the system are kept in a global file table, the `ftable`.
+
+See book xv6 **8.13** for more information.
+
+
+
+## Lab: mmap
+
+The manual page (run man 2 mmap) shows this declaration for `mmap`:
+
+```c
+void *mmap(void *addr, size_t len, int prot, int flags,
+           int fd, off_t offset);
+```
+
+`mmap` can be called in many ways, but this lab requires only a subset of its features relevant to memory-mapping a file. You can assume that `addr` will always be zero, meaning that the kernel should decide the virtual address at which to map the file. `mmap` returns that address, or `0xffffffffffffffff` if it fails. `len` is the number of bytes to map; it might not be the same as the file's length. `prot` indicates whether the memory should be mapped readable, writeable, and/or executable; you can assume that `prot` is `PROT_READ` or `PROT_WRITE` or both. `flags` will be either `MAP_SHARED`, meaning that modifications to the mapped memory should be written back to the file, or `MAP_PRIVATE`, meaning that they should not. You don't have to implement any other bits in `flags`. `fd` is the open file descriptor of the file to map. You can assume `offset` is zero (it's the starting point in the file at which to map).
+
+
+
+### Include order
+
+When c compiler try to compiler a file like `proc.c` and it has
+
+```c
+#include "types.h"
+#include "param.h"
+#include "memlayout.h"
+#include "spinlock.h"
+#include "sleeplock.h"
+#include "file.h"
+#include "proc.h"
+```
+
+The **C preprocessor** (`cpp`) literally replaces each `#include` with the full text of that file — like copy-pasting.
+
+So after preprocessing, the compiler sees one giant file that looks like this (simplified):
+
+```c
+// types.h content...
+typedef unsigned int uint;
+
+// param.h content...
+#define NPROC 64
+
+// spinlock.h content...
+struct spinlock { ... };
+
+// file.h content...
+struct file { struct sleeplock lock; ... };
+
+// proc.h content...
+struct proc { struct file *ofile[NOFILE]; ... };
+```
+
+If any of these appear **before** the required definitions (e.g., you use `struct spinlock` before it’s defined), you get errors like:
+
+```
+error: field ‘lock’ has incomplete type
+```
+
+
+
+**So you must keep the include order correct for every source code file(.c).**
