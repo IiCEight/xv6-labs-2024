@@ -1,5 +1,55 @@
 # MIT6.S081
 
+## ALL TESTS PASSED!
+
+**Congratulations!**
+
+9 labs are all completed and passed all tests with only some help of GPT.
+
+**Begin at 2025 Aug 16 and finish at 2025 Oct 20.**
+
+#### Lab1: Utilities (3 days)
+
+Aug 16 - Aug 18.
+
+#### Lab2: System calls (3 days)
+
+Aug 19 - Aug 21.
+
+#### Lab3: Page tables (4 days)
+
+Aug 23, Aug 24,  Aug 26, Aug 27.
+
+#### Lab4:  Traps (2 days)
+
+Aug 29 - Aug 30.
+
+#### Lab5: Copy on-write (3 days)
+
+Sep 2 - Sep 4
+
+#### Lab6: Network driver (5 days)
+
+Sep 21 - Sep 25
+
+#### Lab7: Lock (3 days)
+
+Oct 11 - Oct 12,  Oct 15.
+
+#### Lab8: File system (3 days)
+
+Oct 13 - Oct 15
+
+#### Lab9: mmap (3 days)
+
+Oct 15,  Oct 19 - Oct 20
+
+
+
+**Updated at 2025.10.20**
+
+
+
 ## Lab: utilities
 
 ### system call
@@ -1237,3 +1287,11 @@ error: field ‘lock’ has incomplete type
 
 
 **So you must keep the include order correct for every source code file(.c).**
+
+
+
+## Scheduling
+
+**Here are no lab for Scheduling but it a significant part of OS.**
+
+See xv6 book **chapter 7** for more information.
